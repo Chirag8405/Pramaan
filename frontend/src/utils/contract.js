@@ -207,6 +207,53 @@ function calculateRoyaltyBps(transferCount) {
     return Math.floor(4000 / root);
 }
 
+function stableSortObject(value) {
+    if (Array.isArray(value)) {
+        return value.map(stableSortObject);
+    }
+
+    if (value && typeof value === "object") {
+        const sorted = {};
+        const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
+        for (const key of keys) {
+            sorted[key] = stableSortObject(value[key]);
+        }
+        return sorted;
+    }
+
+    return value;
+}
+
+function deterministicMetadataHash(metadataPayload) {
+    const normalized = stableSortObject(metadataPayload || {});
+    const canonicalJson = JSON.stringify(normalized);
+    return keccak256(toHex(canonicalJson));
+}
+
+function normalizeBytes32(value, label) {
+    const text = String(value || "").trim();
+    if (!/^0x[0-9a-fA-F]{64}$/.test(text)) {
+        throw new Error("Invalid " + label + ". Expected bytes32 hex string.");
+    }
+    return text;
+}
+
+function normalizeSignatureBytes(value) {
+    const text = String(value || "").trim();
+    if (!/^0x([0-9a-fA-F]{2})+$/.test(text)) {
+        throw new Error("Invalid device signature bytes. Expected 0x-prefixed hex.");
+    }
+    return text;
+}
+
+function normalizeAddress(value, label) {
+    const text = String(value || "").trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(text)) {
+        throw new Error("Invalid " + label + ".");
+    }
+    return text;
+}
+
 function normalizeProductRecord(record) {
     return {
         productHash: record?.productHash,
@@ -777,7 +824,7 @@ export async function executeSecondarySale(tokenId, sellerAddress, saleValueEth)
 }
 
 // Legacy product registry helpers retained for backward compatibility.
-export async function registerProduct(hash, cid, name, giTag, lat, lng) {
+export async function registerProduct(hash, cid, name, giTag, lat, lng, options = {}) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
     assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 
@@ -787,9 +834,7 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
         throw new Error("Only verified artisans can register products on this ProductRegistry deployment.");
     }
 
-    if (!/^0x[0-9a-fA-F]{64}$/.test(String(hash || ""))) {
-        throw new Error("Invalid product hash. Expected bytes32 hex string.");
-    }
+    const normalizedHash = normalizeBytes32(hash, "product hash");
 
     const latitude = BigInt(lat);
     const longitude = BigInt(lng);
@@ -797,25 +842,49 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
         throw new Error("Latitude and longitude must be positive scaled integers.");
     }
 
-    const alreadyRegistered = await isProductHashAlreadyRegistered(hash);
+    const alreadyRegistered = await isProductHashAlreadyRegistered(normalizedHash);
     if (alreadyRegistered) {
         throw new Error("Product already registered. Use a new image/hash.");
     }
 
-    const metadataHash = keccak256(
-        encodeAbiParameters(
-            parseAbiParameters("bytes32,string,string,string,uint256,uint256,address"),
-            [hash, cid, name, giTag, latitude, longitude, artisanAddress]
-        )
-    );
-    const provenanceSigner = artisanAddress;
+    const batchIdentity = {
+        batchId: String(options.batchId || "").trim() || null,
+        lotNumber: String(options.lotNumber || "").trim() || null,
+        batchSize: String(options.batchSize || "").trim() || null,
+        productionDate: String(options.productionDate || "").trim() || null,
+        originLabel: String(options.originLabel || "").trim() || null,
+        geoFenceTag: String(options.geoFenceTag || "").trim() || null
+    };
+
+    const attestationMeta = {
+        schema: "pramaan.attestation.v1",
+        chainId: CHAIN_ID,
+        registry: PRODUCT_REGISTRY_ADDRESS,
+        productHash: normalizedHash,
+        cid,
+        name,
+        giTag,
+        latitudeScaled: latitude.toString(),
+        longitudeScaled: longitude.toString(),
+        artisan: artisanAddress,
+        batchIdentity
+    };
+
+    const metadataHash = options.metadataHash
+        ? normalizeBytes32(options.metadataHash, "metadata hash")
+        : deterministicMetadataHash(attestationMeta);
+
+    const provenanceSigner = options.provenanceSigner
+        ? normalizeAddress(options.provenanceSigner, "provenance signer")
+        : artisanAddress;
+
     const attestationDigest = keccak256(
         encodeAbiParameters(
             parseAbiParameters("uint256,address,bytes32,bytes32,address,address,string,string,string,uint256,uint256"),
             [
                 BigInt(CHAIN_ID),
                 PRODUCT_REGISTRY_ADDRESS,
-                hash,
+                normalizedHash,
                 metadataHash,
                 artisanAddress,
                 provenanceSigner,
@@ -827,10 +896,16 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
             ]
         )
     );
-    const deviceSignature = await signer.signMessage({ message: { raw: attestationDigest } });
+
+    let deviceSignature = "";
+    if (options.deviceSignature) {
+        deviceSignature = normalizeSignatureBytes(options.deviceSignature);
+    } else {
+        deviceSignature = await signer.signMessage({ message: { raw: attestationDigest } });
+    }
 
     const currentArgs = [
-        hash,
+        normalizedHash,
         cid,
         name,
         giTag,
@@ -841,7 +916,7 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
         longitude
     ];
 
-    const legacyArgs = [hash, cid, name, giTag, latitude, longitude];
+    const legacyArgs = [normalizedHash, cid, name, giTag, latitude, longitude];
 
     try {
         const registerProductVariant = await detectRegisterProductVariant();
@@ -863,6 +938,41 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
             "Validation Error: " + detail
         );
     }
+}
+
+export async function isScanNonceUsed(hash, nonce) {
+    assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
+
+    const normalizedHash = normalizeBytes32(hash, "product hash");
+    const normalizedNonce = normalizeBytes32(nonce, "scan nonce");
+
+    return readContract(config, {
+        address: PRODUCT_REGISTRY_ADDRESS,
+        abi: PRODUCT_ABI,
+        functionName: "isScanNonceUsed",
+        args: [normalizedHash, normalizedNonce]
+    });
+}
+
+export async function checkpointScanNonce(hash, nonce) {
+    assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
+
+    const normalizedHash = normalizeBytes32(hash, "product hash");
+    const normalizedNonce = normalizeBytes32(nonce, "scan nonce");
+
+    await connectWallet();
+
+    const replayed = Boolean(await isScanNonceUsed(normalizedHash, normalizedNonce));
+
+    const txHash = await writeWithEstimatedGas({
+        address: PRODUCT_REGISTRY_ADDRESS,
+        abi: PRODUCT_ABI,
+        functionName: "checkpointScanNonce",
+        args: [normalizedHash, normalizedNonce]
+    });
+
+    const receipt = await waitForTransactionReceipt(config, { hash: txHash });
+    return { receipt, replayed, nonce: normalizedNonce };
 }
 
 export async function transferProduct(hash, newOwnerAddress, saleValueEth) {
