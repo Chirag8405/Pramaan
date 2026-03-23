@@ -11,10 +11,14 @@
 - ProductRegistry deploy tx: https://sepolia.etherscan.io/tx/0x00def089e7097ddd174b87ca388c42d434c0c34e00bcc79233d7277540dab38d
 
 ## Transaction Hashes
-- Artisan registration: TODO
-- Product registration: TODO
-- Transfer: TODO
-- Nonce checkpoint (anti-clone): TODO
+- Artisan registration: https://sepolia.etherscan.io/tx/0xd02da246905cdd5be269fdecddd434677a505b29ebf294d3cd20ff864dde4ba7
+- Product registration: https://sepolia.etherscan.io/tx/0x9b79c8bae78170d89a48e09ef7bf60ab1da22387d4f3b5b8dee0279ff3563dea
+- Transfer: https://sepolia.etherscan.io/tx/0x9fb731fe593ca7d49d031e9ab7b27fa4ed56cba84d227371ca53918ffb5a6487
+- Nonce checkpoint (anti-clone): https://sepolia.etherscan.io/tx/0x0ff7cd05612a6d23681707c035a06b37d8f5b2225209951f023157314ab318b0
+
+## Demo Data Snapshot
+- Product Hash: 0x058c0a57701388c2ca545ab05255661bc2eee8060992b49f5687b0c25ed2a055
+- Scan Nonce: 0x239ca4be0bf70b2f167a6e195012da4edef7d174942385f857c0a385a687d598
 
 ## Expected Screenshots
 - Artisan success + tx link

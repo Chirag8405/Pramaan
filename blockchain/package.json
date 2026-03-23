@@ -11,7 +11,8 @@
     "verify:sepolia": "hardhat run scripts/verify.js --network sepolia",
     "sync:frontend:sepolia": "node scripts/sync-frontend-env.js sepolia",
     "deploy:sepolia:sync": "npm run preflight:sepolia && npm run deploy:sepolia && npm run sync:frontend:sepolia",
-    "deploy:sepolia:full": "npm run deploy:sepolia:sync && npm run verify:sepolia"
+    "deploy:sepolia:full": "npm run deploy:sepolia:sync && npm run verify:sepolia",
+    "demo:tx:sepolia": "hardhat run scripts/generate-demo-tx.js --network sepolia"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,19 @@
+{
+  "network": "sepolia",
+  "signer": "0xd2e06BcB4e0E2cC978de6eb606B685B1F6EFC4d6",
+  "productHash": "0x058c0a57701388c2ca545ab05255661bc2eee8060992b49f5687b0c25ed2a055",
+  "nonce": "0x239ca4be0bf70b2f167a6e195012da4edef7d174942385f857c0a385a687d598",
+  "tx": {
+    "artisanRegistration": "0xd02da246905cdd5be269fdecddd434677a505b29ebf294d3cd20ff864dde4ba7",
+    "productRegistration": "0x9b79c8bae78170d89a48e09ef7bf60ab1da22387d4f3b5b8dee0279ff3563dea",
+    "transfer": "0x9fb731fe593ca7d49d031e9ab7b27fa4ed56cba84d227371ca53918ffb5a6487",
+    "nonceCheckpoint": "0x0ff7cd05612a6d23681707c035a06b37d8f5b2225209951f023157314ab318b0"
+  },
+  "links": {
+    "artisanRegistration": "https://sepolia.etherscan.io/tx/0xd02da246905cdd5be269fdecddd434677a505b29ebf294d3cd20ff864dde4ba7",
+    "productRegistration": "https://sepolia.etherscan.io/tx/0x9b79c8bae78170d89a48e09ef7bf60ab1da22387d4f3b5b8dee0279ff3563dea",
+    "transfer": "https://sepolia.etherscan.io/tx/0x9fb731fe593ca7d49d031e9ab7b27fa4ed56cba84d227371ca53918ffb5a6487",
+    "nonceCheckpoint": "https://sepolia.etherscan.io/tx/0x0ff7cd05612a6d23681707c035a06b37d8f5b2225209951f023157314ab318b0"
+  },
+  "generatedAt": "2026-03-23T12:00:29.431Z"
+}
