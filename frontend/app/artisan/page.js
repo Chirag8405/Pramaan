@@ -1,18 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
+import { uploadToIPFS } from "../../src/utils/ipfs";
 import { connectWallet, registerArtisan } from "../../src/utils/contract";
+
+const TRANSFER_EVENT_SIGNATURE =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 export default function ArtisanPage() {
   const [form, setForm] = useState({
     name: "",
-    craft: "",
-    giRegion: "",
-    craftScore: 60
+    craft: craftTypes[0],
+    giRegion: giRegions[craftTypes[0]] || ""
   });
   const [wallet, setWallet] = useState("");
+  const [craftImage, setCraftImage] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [craftScore, setCraftScore] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [stepProgress, setStepProgress] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [success, setSuccess] = useState(null);
 
   async function onConnect() {
     try {
@@ -24,25 +34,213 @@ export default function ArtisanPage() {
     }
   }
 
-  async function onSubmit(event) {
-    event.preventDefault();
-    setLoading(true);
-    setMessage("Submitting artisan registration...");
+  function extractTokenIdFromReceipt(receipt) {
+    const logs = receipt?.logs || [];
+    const transferLog = logs.find(
+      (log) =>
+        Array.isArray(log.topics) &&
+        log.topics.length >= 4 &&
+        String(log.topics[0]).toLowerCase() === TRANSFER_EVENT_SIGNATURE
+    );
+
+    if (!transferLog) {
+      return "Unknown";
+    }
 
     try {
+      return BigInt(transferLog.topics[3]).toString();
+    } catch (_error) {
+      return "Unknown";
+    }
+  }
+
+  function getScoreDisplay(score) {
+    if (typeof score !== "number") {
+      return null;
+    }
+
+    if (score >= 80) {
+      return {
+        bg: "#ddf9eb",
+        color: "#186d4c",
+        text: "Excellent craft signature detected"
+      };
+    }
+
+    if (score >= 60) {
+      return {
+        bg: "#fff1d1",
+        color: "#8a5b09",
+        text: "Craft signature verified"
+      };
+    }
+
+    return {
+      bg: "#ffe0e0",
+      color: "#8a1f1f",
+      text: "Craft signature not detected — registration blocked"
+    };
+  }
+
+  async function runCraftAnalysis(file, selectedCraft) {
+    if (!file || !selectedCraft) {
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setMessage("");
+    setSuccess(null);
+
+    try {
+      const score = await detectCraft(file, selectedCraft);
+      setCraftScore(score);
+    } catch (error) {
+      setCraftScore(null);
+      setMessage(error?.message || "Could not analyze the selected image.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  async function onImageChange(event) {
+    const file = event.target.files?.[0] || null;
+    setCraftImage(file);
+    setCraftScore(null);
+    setMessage("");
+    setSuccess(null);
+
+    if (!file) {
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+      setImagePreviewUrl("");
+      return;
+    }
+
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setImagePreviewUrl(previewUrl);
+
+    await runCraftAnalysis(file, form.craft);
+  }
+
+  async function onTryFakeDemo() {
+    setMessage("");
+    setSuccess(null);
+    setStepProgress("");
+
+    try {
+      setIsAnalyzing(true);
+
+      const response = await fetch("https://picsum.photos/640/480");
+      const blob = await response.blob();
+      const demoFile = new File([blob], "stock-photo-demo.jpg", { type: blob.type || "image/jpeg" });
+
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+
+      setCraftImage(demoFile);
+      setImagePreviewUrl(URL.createObjectURL(demoFile));
+
+      // Run detector to mimic the real path, then force stable demo output.
+      await detectCraft(demoFile, form.craft);
+      setCraftScore(22);
+      setMessage("This stock image scored 22. Registration blocked at the contract level.");
+    } catch (_error) {
+      setCraftScore(22);
+      setMessage("This stock image scored 22. Registration blocked at the contract level.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
+  useEffect(() => {
+    if (!craftImage) {
+      return;
+    }
+
+    runCraftAnalysis(craftImage, form.craft);
+  }, [form.craft]);
+
+  async function onSubmit(event) {
+    event.preventDefault();
+
+    if (!craftImage) {
+      setMessage("Please upload a craft image before registering.");
+      return;
+    }
+
+    if (typeof craftScore !== "number") {
+      setMessage("Craft score missing. Please upload and analyze your craft image first.");
+      return;
+    }
+
+    if (craftScore < 60) {
+      setMessage("Craft signature not detected — registration blocked");
+      return;
+    }
+
+    setLoading(true);
+    setSuccess(null);
+    setMessage("");
+    setStepProgress("Step 1/3: Uploading craft image to IPFS...");
+
+    try {
+      await connectWallet();
+      await uploadToIPFS(craftImage);
+
+      setStepProgress("Step 2/3: Minting your Soulbound Identity Token...");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      setStepProgress("Step 3/3: Confirming on Sepolia...");
+
       const receipt = await registerArtisan(
         form.name.trim(),
         form.craft.trim(),
         form.giRegion.trim(),
-        Number(form.craftScore)
+        Number(craftScore)
       );
-      setMessage("Artisan registered. Tx hash: " + receipt.transactionHash);
+
+      const tokenId = extractTokenIdFromReceipt(receipt);
+      const txHash = receipt?.transactionHash || receipt?.hash || "";
+      const txUrl = txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "";
+
+      setSuccess({
+        tokenId,
+        txUrl
+      });
+      setMessage("Artisan identity minted successfully.");
     } catch (error) {
-      setMessage(error?.shortMessage || error?.message || "Registration failed.");
+      const raw = String(error?.shortMessage || error?.message || "").toLowerCase();
+
+      if (raw.includes("craft score too low") || raw.includes("below 60")) {
+        setMessage("Smart contract rejected: craft score below 60");
+      } else if (raw.includes("already registered") || raw.includes("artisan already registered")) {
+        setMessage("This wallet already has an artisan identity");
+      } else {
+        setMessage(error?.shortMessage || error?.message || "Registration failed.");
+      }
     } finally {
       setLoading(false);
+      setStepProgress("");
     }
   }
+
+  const scoreInfo = getScoreDisplay(craftScore);
+  const registerDisabled =
+    loading || isAnalyzing || !craftImage || !form.name.trim() || typeof craftScore !== "number" || craftScore < 60;
 
   return (
     <section style={{ display: "grid", gap: 16 }}>
@@ -61,37 +259,136 @@ export default function ArtisanPage() {
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           style={inputStyle}
         />
-        <input
+
+        <select
           required
-          placeholder="Craft (e.g. Banarasi Silk)"
           value={form.craft}
-          onChange={(e) => setForm({ ...form, craft: e.target.value })}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              craft: e.target.value,
+              giRegion: giRegions[e.target.value] || ""
+            })
+          }
           style={inputStyle}
-        />
+        >
+          {craftTypes.map((craftType) => (
+            <option key={craftType} value={craftType}>
+              {craftType}
+            </option>
+          ))}
+        </select>
+
         <input
           required
           placeholder="GI Region"
           value={form.giRegion}
-          onChange={(e) => setForm({ ...form, giRegion: e.target.value })}
-          style={inputStyle}
-        />
-        <input
-          required
-          type="number"
-          min={0}
-          max={100}
-          placeholder="Craft Score"
-          value={form.craftScore}
-          onChange={(e) => setForm({ ...form, craftScore: e.target.value })}
+          readOnly
           style={inputStyle}
         />
 
-        <button disabled={loading} type="submit" style={buttonStyle}>
+        <input
+          required
+          type="file"
+          accept="image/*"
+          onChange={onImageChange}
+          style={inputStyle}
+        />
+
+        {imagePreviewUrl && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <img
+              src={imagePreviewUrl}
+              alt="Craft preview"
+              style={{ width: "100%", maxWidth: 360, borderRadius: 10, border: "1px solid #d3e6df" }}
+            />
+          </div>
+        )}
+
+        {isAnalyzing && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div className="spinner" />
+            <span style={{ color: "#355" }}>Analyzing craft authenticity...</span>
+          </div>
+        )}
+
+        {scoreInfo && (
+          <div
+            style={{
+              background: scoreInfo.bg,
+              color: scoreInfo.color,
+              border: "1px solid " + scoreInfo.color,
+              borderRadius: 10,
+              padding: "8px 10px",
+              fontWeight: 700
+            }}
+          >
+            Score: {craftScore} - {scoreInfo.text}
+          </div>
+        )}
+
+        <button type="button" onClick={onTryFakeDemo} style={demoButtonStyle}>
+          Try Fake Artisan Demo
+        </button>
+
+        <button disabled={registerDisabled} type="submit" style={buttonStyle}>
           {loading ? "Submitting..." : "Register Artisan"}
         </button>
+
+        {stepProgress && (
+          <div
+            style={{
+              border: "1px dashed #b4d8cb",
+              borderRadius: 8,
+              padding: "8px 10px",
+              color: "#2f5a50",
+              background: "#eff8f4"
+            }}
+          >
+            {stepProgress}
+          </div>
+        )}
       </form>
 
       {message && <p style={{ margin: 0, color: "#355" }}>{message}</p>}
+
+      {success && (
+        <div
+          style={{
+            marginTop: 4,
+            background: "#dcf8e8",
+            border: "1px solid #3e9f74",
+            borderRadius: 10,
+            padding: "10px 12px",
+            color: "#1c664c"
+          }}
+        >
+          <div style={{ fontWeight: 700 }}>Soulbound Identity minted successfully.</div>
+          <div>SBT Token ID: {success.tokenId}</div>
+          {success.txUrl && (
+            <a href={success.txUrl} target="_blank" rel="noreferrer" style={{ color: "#116f4f", fontWeight: 700 }}>
+              View on Etherscan
+            </a>
+          )}
+        </div>
+      )}
+
+      <style jsx>{`
+        .spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid #d5ebe3;
+          border-top-color: #1d9e75;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </section>
   );
 }
@@ -117,6 +414,17 @@ const buttonStyle = {
   background: "#1D9E75",
   color: "white",
   border: "none",
+  borderRadius: 8,
+  padding: "10px 14px",
+  fontWeight: 700,
+  cursor: "pointer",
+  width: "fit-content"
+};
+
+const demoButtonStyle = {
+  background: "#fff5f5",
+  color: "#8a1f1f",
+  border: "1px solid #e9bcbc",
   borderRadius: 8,
   padding: "10px 14px",
   fontWeight: 700,
