@@ -17,49 +17,21 @@ const navItems = [
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: "Segoe UI, sans-serif" }}>
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 20,
-            background: "white",
-            borderBottom: "1px solid #dcebe5"
-          }}
-        >
-          <nav
-            style={{
-              maxWidth: 1100,
-              margin: "0 auto",
-              padding: "14px 20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 16,
-              flexWrap: "wrap"
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/" style={{ textDecoration: "none", color: "#1D9E75", fontWeight: 800, fontSize: 24 }}>
+      <body className="m-0 antialiased">
+        <header className="sticky top-0 z-30 border-b border-[#dcebe5] bg-white/95 backdrop-blur">
+          <nav className="mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-3 px-4 py-3 md:grid-cols-[1fr_auto] md:gap-6 md:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <Link href="/" className="shrink-0 text-3xl font-extrabold leading-none tracking-tight text-[#1D9E75] no-underline">
                 Pramaan
               </Link>
-              <span style={{ color: "#466", fontSize: 13 }}>Sovereign Traceability for Indian Craft</span>
+              <span className="truncate text-sm text-[#49665e]">Sovereign Traceability for Indian Craft</span>
             </div>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 md:justify-end md:pb-0">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  style={{
-                    textDecoration: "none",
-                    color: "#184f43",
-                    background: "#e8f5f1",
-                    border: "1px solid #c8e7dd",
-                    borderRadius: 999,
-                    padding: "8px 14px",
-                    fontSize: 14,
-                    fontWeight: 600
-                  }}
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-full border border-[#cddfd8] bg-white px-5 py-2 text-sm font-semibold text-[#1f5b4b] no-underline transition hover:bg-[#f6fbf9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                 >
                   {item.label}
                 </Link>
@@ -68,7 +40,7 @@ export default function RootLayout({ children }) {
           </nav>
         </header>
         <Providers>
-          <main style={{ maxWidth: 1100, margin: "0 auto", padding: "22px 20px 40px" }}>{children}</main>
+          <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6 md:py-8">{children}</main>
         </Providers>
       </body>
     </html>

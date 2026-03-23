@@ -77,9 +77,11 @@ export default function HomePage() {
                             <ArrowRight size={16} />
                         </Button>
                     </Link>
-                    <Button size="lg" variant="secondary" type="button">
-                        Explore Core Features
-                    </Button>
+                    <Link href="#core-features">
+                        <Button size="lg" variant="secondary" type="button">
+                            Explore Core Features
+                        </Button>
+                    </Link>
                 </CardContent>
             </Card>
 
@@ -146,20 +148,20 @@ export default function HomePage() {
 
             <section className="grid gap-4">
                 <h2 className="text-2xl font-bold text-[#20473d]">Get Started Step-by-Step</h2>
-                <p className="text-sm text-slate-600">Follow this guided journey. Each step opens on a dedicated page.</p>
+                <p className="text-sm text-slate-600">Follow this guided journey across Artisan, Product, Transfer, and Verify pages.</p>
                 <div className="grid gap-3">
                     {steps.map((step) => (
                         <Card key={step.number}>
-                            <CardContent className="flex flex-col gap-3 pt-6 md:flex-row md:items-center md:justify-between">
-                                <div>
-                                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#6a7f77]">{step.number}</div>
-                                    <div className="text-lg font-semibold text-[#20473d]">{step.title}</div>
-                                    <div className="text-sm text-slate-600">{step.description}</div>
+                            <CardContent className="pt-6">
+                                <div className="flex items-start gap-4">
+                                    <div className="mt-0.5 rounded-full border border-[#c7ddd5] bg-[#edf7f3] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#2d5d50]">
+                                        {step.number}
+                                    </div>
+                                    <div className="grid gap-1">
+                                        <div className="text-lg font-semibold text-[#20473d]">{step.title}</div>
+                                        <div className="text-sm text-slate-600">{step.description}</div>
+                                    </div>
                                 </div>
-                                <Button variant="secondary" className="gap-2" type="button" disabled>
-                                    Open Step
-                                    <ArrowRight size={16} />
-                                </Button>
                             </CardContent>
                         </Card>
                     ))}
