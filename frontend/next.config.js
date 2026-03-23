@@ -1,5 +1,8 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: path.resolve(__dirname),
   webpack: (config) => {
     config.resolve = config.resolve || {};
     config.resolve.alias = config.resolve.alias || {};
@@ -22,6 +25,15 @@ const nextConfig = {
     for (const dep of optionalDeps) {
       config.resolve.alias[dep] = false;
     }
+
+    // Suppress known warning from @anon-aadhaar dependency chain.
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      {
+        module: /web-worker[\\/]cjs[\\/]node\.js$/,
+        message: /Critical dependency: the request of a dependency is an expression/
+      }
+    ];
 
     return config;
   }

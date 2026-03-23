@@ -1,315 +1,170 @@
-"use client";
-
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import TerritorScore from "../components/TerritorScore";
+import { ArrowRight, BadgeCheck, Fingerprint, Landmark, Leaf, ShieldCheck, Sparkles } from "lucide-react";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 
-const featureCards = [
-  {
-    title: "Proof of Craft",
-    desc: "Only verified artisans can register products. AI-verified at the source.",
-    className: "teal"
-  },
-  {
-    title: "Soulbound Identity",
-    desc: "Artisan identity is permanently tied to every product. Cannot be transferred or faked.",
-    className: "purple"
-  },
-  {
-    title: "Terroir Score",
-    desc: "A live 0-100 trust score that degrades the moment a fake handler touches the supply chain.",
-    className: "amber"
-  }
+const features = [
+    {
+        icon: Fingerprint,
+        title: "Privacy-first Artisan Identity",
+        description:
+            "Anon Aadhaar verification confirms authenticity without exposing sensitive personal details to the platform."
+    },
+    {
+        icon: Sparkles,
+        title: "AI Proof of Craft",
+        description:
+            "Image intelligence scores workshop evidence and helps block low-confidence submissions before minting."
+    },
+    {
+        icon: Landmark,
+        title: "Dynamic Royalty Engine",
+        description:
+            "Quadratic royalty taper sustains artisan upside while preserving margin for secondary market growth."
+    },
+    {
+        icon: ShieldCheck,
+        title: "Trustable Provenance",
+        description:
+            "Every product journey remains queryable through a transparent trail from origin artisan to latest owner."
+    }
 ];
 
-const demoProducts = [
-  { name: "First Flush Darjeeling 2024", terroir: 97, artisan: "Ravi Kumar" },
-  { name: "Banarasi Silk Saree — Crimson", terroir: 84, artisan: "Meera Devi" },
-  { name: "Alphonso Mango Batch 12", terroir: 61, artisan: "Suresh Patil" }
-];
-
-const quickDemoLinks = [
-  { label: "Artisan Flow", href: "/artisan" },
-  { label: "Register Product", href: "/register-product" },
-  { label: "Transfer", href: "/transfer" },
-  { label: "Verify", href: "/verify" },
-  { label: "Attack Demo", href: "/verify" },
-  { label: "Live Monitor", href: "/monitor" },
-  { label: "Evidence", href: "/evidence" }
+const steps = [
+    {
+        number: "Step 1",
+        title: "Identity and Trust Setup",
+        description: "Register artisan profile and complete Anon Aadhaar verification."
+    },
+    {
+        number: "Step 2",
+        title: "Register Product Twin",
+        description: "Upload product proof, pin assets to IPFS, and anchor product metadata."
+    },
+    {
+        number: "Step 3",
+        title: "Transfer and Royalty",
+        description: "Simulate and execute secondary sale settlement with dynamic payout logic."
+    },
+    {
+        number: "Step 4",
+        title: "Public Provenance Check",
+        description: "Anyone can verify product history and trust status from the explorer."
+    }
 ];
 
 export default function HomePage() {
-  const [hash, setHash] = useState("");
-  const router = useRouter();
+    return (
+        <section className="grid gap-8">
+            <Card className="overflow-hidden border-[#d8cab5] bg-linear-to-br from-[#fff8ef] via-[#f7f2e9] to-[#eef6f2]">
+                <CardHeader className="gap-4">
+                    <Badge variant="warm" className="w-fit">
+                        Pranaam - Sovereign Traceability System
+                    </Badge>
+                    <CardTitle className="text-3xl leading-tight md:text-5xl">
+                        Build Trust for Every Handmade Product
+                    </CardTitle>
+                    <CardDescription className="max-w-3xl text-base md:text-lg">
+                        Pranaam helps artisans prove origin, certify craft integrity, and receive fair long-term royalties through
+                        privacy-preserving identity and on-chain provenance.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-3">
+                    <Link href="/artisan">
+                        <Button size="lg" className="gap-2">
+                            Get Started
+                            <ArrowRight size={16} />
+                        </Button>
+                    </Link>
+                    <Button size="lg" variant="secondary" type="button">
+                        Explore Core Features
+                    </Button>
+                </CardContent>
+            </Card>
 
-  function onVerify(event) {
-    event.preventDefault();
-    const cleanHash = hash.trim();
-    router.push("/verify?hash=" + encodeURIComponent(cleanHash));
-  }
+            <Card>
+                <CardHeader>
+                    <CardTitle>Why Pranaam</CardTitle>
+                    <CardDescription>
+                        Because trust in handcrafted products should be cryptographically verifiable, economically fair, and easy
+                        for everyday users to understand.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-3">
+                    <div className="rounded-xl border border-[#e2d3be] bg-[#fff7ee] p-4">
+                        <div className="mb-2 flex items-center gap-2 font-semibold text-[#8b4d33]">
+                            <Leaf size={16} />
+                            Preserve Craft Heritage
+                        </div>
+                        <p className="text-sm text-slate-600">
+                            Give traditional artisans a digital trust layer without forcing them to share more data than needed.
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-[#d4e4dd] bg-[#f1f9f5] p-4">
+                        <div className="mb-2 flex items-center gap-2 font-semibold text-[#205746]">
+                            <BadgeCheck size={16} />
+                            Reduce Supply Chain Fraud
+                        </div>
+                        <p className="text-sm text-slate-600">
+                            Make origin and handling auditable, so buyers and retailers can verify product authenticity confidently.
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-[#dae2e7] bg-[#f7fafc] p-4">
+                        <div className="mb-2 flex items-center gap-2 font-semibold text-[#345061]">
+                            <ShieldCheck size={16} />
+                            Reward Honest Networks
+                        </div>
+                        <p className="text-sm text-slate-600">
+                            Incentivize verified behavior with dynamic payouts and slash trust for fraudulent endorsements.
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
 
-  return (
-    <section className="home-wrap">
-      <style>{`
-        .home-wrap {
-          display: grid;
-          gap: 40px;
-          padding: 8px 0 30px;
-        }
+            <section id="core-features" className="grid gap-4">
+                <h2 className="text-2xl font-bold text-[#20473d]">Core Features</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                    {features.map((feature) => {
+                        const Icon = feature.icon;
+                        return (
+                            <Card key={feature.title}>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-xl">
+                                        <Icon size={18} />
+                                        {feature.title}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm text-slate-600">{feature.description}</p>
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
+                </div>
+            </section>
 
-        .hero {
-          border: 1px solid #dcebe6;
-          border-radius: 22px;
-          background:
-            radial-gradient(120% 120% at 0% 0%, #d9f7f0 0%, rgba(217, 247, 240, 0) 48%),
-            radial-gradient(120% 120% at 100% 100%, #fff4de 0%, rgba(255, 244, 222, 0) 50%),
-            #ffffff;
-          padding: 42px 20px;
-          text-align: center;
-        }
-
-        .hero h1 {
-          margin: 0;
-          color: #11352f;
-          font-size: clamp(28px, 5vw, 48px);
-          line-height: 1.1;
-          letter-spacing: -0.02em;
-        }
-
-        .hero p {
-          margin: 14px auto 0;
-          max-width: 760px;
-          color: #3f5e57;
-          font-size: clamp(15px, 2vw, 18px);
-          line-height: 1.6;
-        }
-
-        .verify-form {
-          margin: 26px auto 0;
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 10px;
-          max-width: 780px;
-          background: #ffffff;
-          border: 1px solid #cfe3dc;
-          border-radius: 14px;
-          padding: 10px;
-          box-shadow: 0 10px 28px rgba(18, 63, 54, 0.08);
-        }
-
-        .verify-form input {
-          border: 1px solid #c9dfd8;
-          border-radius: 10px;
-          padding: 14px 14px;
-          font-size: 15px;
-          color: #11352f;
-          outline: none;
-        }
-
-        .verify-form input:focus {
-          border-color: #1ea07a;
-          box-shadow: 0 0 0 3px rgba(30, 160, 122, 0.12);
-        }
-
-        .verify-form button {
-          border: none;
-          border-radius: 10px;
-          padding: 0 20px;
-          font-size: 15px;
-          font-weight: 700;
-          color: #ffffff;
-          background: linear-gradient(145deg, #1ea07a 0%, #137f60 100%);
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .verify-form button:hover {
-          filter: brightness(1.05);
-        }
-
-        .feature-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 14px;
-        }
-
-        .feature-card {
-          border-radius: 16px;
-          color: #ffffff;
-          padding: 20px;
-          min-height: 160px;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          box-shadow: 0 12px 28px rgba(17, 33, 52, 0.12);
-        }
-
-        .feature-card h3 {
-          margin: 0 0 10px;
-          font-size: 21px;
-          line-height: 1.2;
-        }
-
-        .feature-card p {
-          margin: 0;
-          line-height: 1.55;
-          font-size: 14px;
-          opacity: 0.95;
-        }
-
-        .feature-card.teal {
-          background: linear-gradient(150deg, #0d8e88 0%, #14b8a6 100%);
-        }
-
-        .feature-card.purple {
-          background: linear-gradient(150deg, #6d3ff2 0%, #9568ff 100%);
-        }
-
-        .feature-card.amber {
-          background: linear-gradient(150deg, #bc6a08 0%, #e59d1c 100%);
-        }
-
-        .section-title {
-          margin: 0 0 12px;
-          font-size: clamp(24px, 3vw, 32px);
-          color: #11352f;
-          letter-spacing: -0.01em;
-        }
-
-        .product-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 14px;
-        }
-
-        .product-card {
-          border: 1px solid #d8e9e2;
-          border-radius: 16px;
-          padding: 16px;
-          background: #ffffff;
-          display: grid;
-          gap: 12px;
-        }
-
-        .product-card h4 {
-          margin: 0;
-          font-size: 18px;
-          color: #163d35;
-          line-height: 1.35;
-        }
-
-        .artisan-name {
-          margin: 0;
-          color: #4a685f;
-          font-size: 14px;
-        }
-
-        .prov-btn {
-          display: inline-block;
-          text-decoration: none;
-          border: 1px solid #bfdcd1;
-          border-radius: 10px;
-          padding: 10px 12px;
-          background: #edf8f4;
-          color: #125f47;
-          font-weight: 700;
-          font-size: 14px;
-        }
-
-        .prov-btn:hover {
-          background: #dbf2e9;
-        }
-
-        .stats-bar {
-          border: 1px solid #cfe3dc;
-          border-radius: 14px;
-          background: linear-gradient(120deg, #143d34 0%, #1c5648 100%);
-          color: #e2f7ef;
-          text-align: center;
-          font-size: clamp(15px, 2.6vw, 19px);
-          font-weight: 700;
-          padding: 18px 14px;
-          line-height: 1.5;
-        }
-
-        @media (max-width: 980px) {
-          .feature-grid,
-          .product-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .verify-form {
-            grid-template-columns: 1fr;
-          }
-
-          .verify-form button {
-            padding: 12px;
-          }
-        }
-      `}</style>
-
-      <div className="hero">
-        <h1>Is your product really from where it claims?</h1>
-        <p>
-          Scan any Pramaan-registered product to verify its origin,
-          trace its journey, and see its live Terroir Score.
-        </p>
-
-        <form className="verify-form" onSubmit={onVerify}>
-          <input
-            type="text"
-            placeholder="Enter product hash or scan QR code"
-            value={hash}
-            onChange={(event) => setHash(event.target.value)}
-          />
-          <button type="submit">Verify Now</button>
-        </form>
-      </div>
-
-      <div>
-        <h2 className="section-title">Why Pramaan Works</h2>
-        <div className="feature-grid">
-          {featureCards.map((card) => (
-            <article key={card.title} className={"feature-card " + card.className}>
-              <h3>{card.title}</h3>
-              <p>{card.desc}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h2 className="section-title">Demo Registered Products</h2>
-        <div className="product-grid">
-          {demoProducts.map((product) => (
-            <article key={product.name} className="product-card">
-              <h4>{product.name}</h4>
-              <p className="artisan-name">Artisan: {product.artisan}</p>
-              <TerritorScore score={product.terroir} />
-              <Link href="/verify" className="prov-btn">
-                View Full Provenance
-              </Link>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h2 className="section-title">Quick Demo Checklist</h2>
-        <div className="product-grid">
-          {quickDemoLinks.map((item) => (
-            <article key={item.href + item.label} className="product-card">
-              <h4>{item.label}</h4>
-              <Link href={item.href} className="prov-btn">
-                Open {item.href}
-              </Link>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="stats-bar">
-        2,847 Products Registered  |  891 Verified Artisans  |  14 GI Tags Covered
-      </div>
-    </section>
-  );
+            <section className="grid gap-4">
+                <h2 className="text-2xl font-bold text-[#20473d]">Get Started Step-by-Step</h2>
+                <p className="text-sm text-slate-600">Follow this guided journey. Each step opens on a dedicated page.</p>
+                <div className="grid gap-3">
+                    {steps.map((step) => (
+                        <Card key={step.number}>
+                            <CardContent className="flex flex-col gap-3 pt-6 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#6a7f77]">{step.number}</div>
+                                    <div className="text-lg font-semibold text-[#20473d]">{step.title}</div>
+                                    <div className="text-sm text-slate-600">{step.description}</div>
+                                </div>
+                                <Button variant="secondary" className="gap-2" type="button" disabled>
+                                    Open Step
+                                    <ArrowRight size={16} />
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
+            </section>
+        </section>
+    );
 }
