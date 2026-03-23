@@ -58,11 +58,44 @@ function ensureManifestsInDir(dirPath, preferredSource) {
   }
 }
 
+function copyIfExists(src, dst) {
+  if (!fs.existsSync(src)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.copyFileSync(src, dst);
+  console.log("mirrored", src, "->", dst);
+}
+
+function mirrorCoreNextFilesToParent(localNextDir, parentNextDir) {
+  const filesToMirror = [
+    "routes-manifest.json",
+    "routes-manifest-deterministic.json",
+    "app-path-routes-manifest.json",
+    path.join("server", "pages-manifest.json")
+  ];
+
+  for (const relPath of filesToMirror) {
+    const src = path.join(localNextDir, relPath);
+    const dst = path.join(parentNextDir, relPath);
+    copyIfExists(src, dst);
+  }
+}
+
 function main() {
   const cwd = process.cwd();
   const localNextDir = path.join(cwd, ".next");
   const localRoutes = path.join(localNextDir, "routes-manifest.json");
   ensureManifestsInDir(localNextDir, localRoutes);
+
+  // Vercel can resolve some manifests from /vercel/path0/.next even when
+  // the app is in a subdirectory. Mirror the core manifests only on Vercel.
+  if (process.env.VERCEL === "1") {
+    const parentNextDir = path.resolve(cwd, "..", ".next");
+    mirrorCoreNextFilesToParent(localNextDir, parentNextDir);
+    ensureManifestsInDir(parentNextDir, path.join(parentNextDir, "routes-manifest.json"));
+  }
 }
 
 main();
