@@ -10,6 +10,7 @@ export const metadata = {
 const navItems = [
   { href: "/artisan", label: "Artisan" },
   { href: "/register-product", label: "Register Product" },
+  { href: "/retailer-verify", label: "Retailer Verify" },
   { href: "/verify", label: "Verify" },
   { href: "/transfer", label: "Transfer" }
 ];
