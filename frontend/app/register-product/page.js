@@ -13,6 +13,46 @@ import { getArtisan, getArtisanTokenId, connectWallet, isVerifiedArtisan, regist
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
 
+function sanitizeHexBytes(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.startsWith("0x") ? text : "0x" + text;
+}
+
+function sanitizeAddress(value) {
+  return String(value || "").trim();
+}
+
+const DEFAULT_JAIPUR_LAT = "26.9124";
+const DEFAULT_JAIPUR_LNG = "75.7873";
+
+function buildAutoBatchIdentity(productHash) {
+  const now = new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(now.getUTCDate()).padStart(2, "0");
+  const yyyymmdd = "" + yyyy + mm + dd;
+  const hashSuffix = String(productHash || "").replace(/^0x/, "").slice(0, 8).toUpperCase() || "DEMO";
+
+  return {
+    batchId: "BATCH-" + yyyymmdd + "-" + hashSuffix,
+    lotNumber: "LOT-" + yyyymmdd,
+    batchSize: "1",
+    productionDate: yyyy + "-" + mm + "-" + dd
+  };
+}
+
+function toDdMmYyyy(isoDate) {
+  const text = String(isoDate || "");
+  const parts = text.split("-");
+  if (parts.length !== 3) {
+    return text;
+  }
+  return parts[2] + "-" + parts[1] + "-" + parts[0];
+}
+
 export default function RegisterProductPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -24,9 +64,10 @@ export default function RegisterProductPage() {
   const [form, setForm] = useState({
     name: "",
     giTag: "",
-    lat: "",
-    lng: "",
-    batchSize: ""
+    lat: DEFAULT_JAIPUR_LAT,
+    lng: DEFAULT_JAIPUR_LNG,
+    provenanceSigner: "",
+    deviceSignature: ""
   });
 
   const [productImage, setProductImage] = useState(null);
@@ -36,6 +77,7 @@ export default function RegisterProductPage() {
   const [stepProgress, setStepProgress] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(null);
+  const autoBatchPreview = buildAutoBatchIdentity(productHash);
 
   useEffect(() => {
     let mounted = true;
@@ -86,7 +128,8 @@ export default function RegisterProductPage() {
 
         setForm((prev) => ({
           ...prev,
-          giTag: String(artisanRecord.craft || "")
+          giTag: String(artisanRecord.craft || ""),
+          provenanceSigner: address
         }));
 
         try {
@@ -176,35 +219,89 @@ export default function RegisterProductPage() {
     setLoading(true);
     setStatusText("");
     setSuccess(null);
-    setStepProgress("Step 1/3: Uploading product image to IPFS...");
+    setStepProgress("Step 1/4: Uploading product image to IPFS...");
 
     try {
-      const cid = await uploadToIPFS(productImage);
+      const imageCid = await uploadToIPFS(productImage);
+      const autoBatch = buildAutoBatchIdentity(productHash);
 
-      setStepProgress("Step 2/3: Anchoring product identity on Sepolia...");
+      const metadataPayload = {
+        schema: "pramaan.attestation.v1",
+        productHash,
+        productName: form.name.trim(),
+        giTag: form.giTag.trim(),
+        imageCid,
+        batchIdentity: {
+          batchId: autoBatch.batchId,
+          lotNumber: autoBatch.lotNumber,
+          batchSize: autoBatch.batchSize,
+          productionDate: autoBatch.productionDate
+        }
+      };
+
+      const metadataFile = new File(
+        [JSON.stringify(metadataPayload, null, 2)],
+        "pramaan-attestation-" + productHash.slice(2, 10) + ".json",
+        { type: "application/json" }
+      );
+
+      setStepProgress("Step 2/4: Uploading attestation metadata to IPFS...");
+      const metadataCid = await uploadToIPFS(metadataFile);
+
+      setStepProgress("Step 3/4: Anchoring product identity on Sepolia...");
 
       const latScaled = Math.round(Number(form.lat) * 1000000);
       const lngScaled = Math.round(Number(form.lng) * 1000000);
 
+      const signerAddress = sanitizeAddress(form.provenanceSigner);
+      const deviceSignature = sanitizeHexBytes(form.deviceSignature);
+
+      if (signerAddress && !/^0x[0-9a-fA-F]{40}$/.test(signerAddress)) {
+        throw new Error("Invalid provenance signer address.");
+      }
+
+      if (deviceSignature && !/^0x([0-9a-fA-F]{2})+$/.test(deviceSignature)) {
+        throw new Error("Invalid device signature. Expected hex bytes.");
+      }
+
+      if (signerAddress && signerAddress.toLowerCase() !== walletAddress.toLowerCase() && !deviceSignature) {
+        throw new Error("Custom provenance signer requires explicit device signature.");
+      }
+
       const receipt = await registerProduct(
         productHash,
-        cid,
+        metadataCid,
         form.name.trim(),
         form.giTag.trim(),
         latScaled,
-        lngScaled
+        lngScaled,
+        {
+          provenanceSigner: signerAddress,
+          deviceSignature,
+          batchId: autoBatch.batchId,
+          lotNumber: autoBatch.lotNumber,
+          batchSize: autoBatch.batchSize,
+          productionDate: autoBatch.productionDate
+        }
       );
 
-      setStepProgress("Step 3/3: Confirming...");
+      setStepProgress("Step 4/4: Confirming...");
 
       const txHash = receipt?.transactionHash || receipt?.hash || "";
-      const ipfsUrl = getIPFSUrl(cid);
+      const imageUrl = getIPFSUrl(imageCid);
+      const metadataUrl = getIPFSUrl(metadataCid);
       const verifyUrl = "/verify?hash=" + productHash;
       const transferUrl = "/transfer?hash=" + productHash;
 
       setSuccess({
         productHash,
-        ipfsUrl,
+        imageUrl,
+        metadataUrl,
+        provenanceSigner: signerAddress || walletAddress,
+        batchId: autoBatch.batchId,
+        lotNumber: autoBatch.lotNumber,
+        batchSize: autoBatch.batchSize,
+        productionDate: autoBatch.productionDate,
         txUrl: txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "",
         verifyUrl,
         transferUrl
@@ -316,7 +413,7 @@ export default function RegisterProductPage() {
       <Card className="max-w-3xl">
         <CardHeader className="pb-2">
           <CardTitle>Product Metadata</CardTitle>
-          <CardDescription>All fields except batch size are required for on-chain registration.</CardDescription>
+          <CardDescription>Demo-friendly form with visible auto-filled logistics fields and background attestation security.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid gap-3">
@@ -335,23 +432,40 @@ export default function RegisterProductPage() {
             <Input
               required
               type="number"
-              placeholder="Latitude"
+              placeholder="Latitude (auto-filled)"
               value={form.lat}
               onChange={(e) => setForm({ ...form, lat: e.target.value })}
             />
             <Input
               required
               type="number"
-              placeholder="Longitude"
+              placeholder="Longitude (auto-filled)"
               value={form.lng}
               onChange={(e) => setForm({ ...form, lng: e.target.value })}
             />
 
             <Input
-              type="number"
-              placeholder="Batch size (optional)"
-              value={form.batchSize}
-              onChange={(e) => setForm({ ...form, batchSize: e.target.value })}
+              readOnly
+              placeholder="Batch ID (auto-filled)"
+              value={autoBatchPreview.batchId}
+            />
+
+            <Input
+              readOnly
+              placeholder="Lot Number (auto-filled)"
+              value={autoBatchPreview.lotNumber}
+            />
+
+            <Input
+              readOnly
+              placeholder="Batch Size (auto-filled)"
+              value={autoBatchPreview.batchSize}
+            />
+
+            <Input
+              readOnly
+              placeholder="Date (dd-mm-yyyy, auto-filled)"
+              value={toDdMmYyyy(autoBatchPreview.productionDate)}
             />
 
             <Input type="file" accept="image/*" required onChange={onImageChange} />
@@ -395,10 +509,21 @@ export default function RegisterProductPage() {
             <p className="m-0">Product hash: {success.productHash}</p>
             <p className="m-0">
               IPFS Image:{" "}
-              <a href={success.ipfsUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
-                {success.ipfsUrl}
+              <a href={success.imageUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
+                {success.imageUrl}
               </a>
             </p>
+            <p className="m-0">
+              Attestation Metadata:{" "}
+              <a href={success.metadataUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
+                {success.metadataUrl}
+              </a>
+            </p>
+            <p className="m-0">Provenance Signer: {success.provenanceSigner}</p>
+            <p className="m-0">Batch ID (auto): {success.batchId}</p>
+            <p className="m-0">Lot Number (auto): {success.lotNumber}</p>
+            <p className="m-0">Batch Size (auto): {success.batchSize}</p>
+            <p className="m-0">Production Date (auto): {success.productionDate}</p>
             {success.txUrl && (
               <p className="m-0">
                 Etherscan:{" "}
