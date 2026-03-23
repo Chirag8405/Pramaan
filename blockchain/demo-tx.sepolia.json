@@ -1,19 +1,21 @@
 {
   "network": "sepolia",
   "signer": "0xd2e06BcB4e0E2cC978de6eb606B685B1F6EFC4d6",
-  "productHash": "0x058c0a57701388c2ca545ab05255661bc2eee8060992b49f5687b0c25ed2a055",
-  "nonce": "0x239ca4be0bf70b2f167a6e195012da4edef7d174942385f857c0a385a687d598",
+  "productHash": "0x8452114c2e1ee4c042be55bb4b0e31495ec1b893c9fe3466071ddb46dfbef5a3",
+  "nonce": "0xece5d0c3f65a9883c826a570a5dba7d41ff62e103a473061e18b05eae89e4c3a",
   "tx": {
-    "artisanRegistration": "0xd02da246905cdd5be269fdecddd434677a505b29ebf294d3cd20ff864dde4ba7",
-    "productRegistration": "0x9b79c8bae78170d89a48e09ef7bf60ab1da22387d4f3b5b8dee0279ff3563dea",
-    "transfer": "0x9fb731fe593ca7d49d031e9ab7b27fa4ed56cba84d227371ca53918ffb5a6487",
-    "nonceCheckpoint": "0x0ff7cd05612a6d23681707c035a06b37d8f5b2225209951f023157314ab318b0"
+    "artisanRegistration": "",
+    "aadhaarVerification": "0xfe802a5b560bc78dd7607a70e04784eae6b3eac1efe6045e5cb68935f60c53d8",
+    "productRegistration": "0x8f8564f5e48604e50ccfebe3a3e4684a75fec8a57435bf38df91faf6f24f86cb",
+    "transfer": "0x952a35cd075ccf36eae7ae734ab5d2b3897fca4143eb246c5f28f739f9ac8505",
+    "nonceCheckpoint": "0xd3c6ee1a0a487a894f8ba8a3bffb404ebcf82af6456026a91dee08939606b11d"
   },
   "links": {
-    "artisanRegistration": "https://sepolia.etherscan.io/tx/0xd02da246905cdd5be269fdecddd434677a505b29ebf294d3cd20ff864dde4ba7",
-    "productRegistration": "https://sepolia.etherscan.io/tx/0x9b79c8bae78170d89a48e09ef7bf60ab1da22387d4f3b5b8dee0279ff3563dea",
-    "transfer": "https://sepolia.etherscan.io/tx/0x9fb731fe593ca7d49d031e9ab7b27fa4ed56cba84d227371ca53918ffb5a6487",
-    "nonceCheckpoint": "https://sepolia.etherscan.io/tx/0x0ff7cd05612a6d23681707c035a06b37d8f5b2225209951f023157314ab318b0"
+    "artisanRegistration": "",
+    "aadhaarVerification": "https://sepolia.etherscan.io/tx/0xfe802a5b560bc78dd7607a70e04784eae6b3eac1efe6045e5cb68935f60c53d8",
+    "productRegistration": "https://sepolia.etherscan.io/tx/0x8f8564f5e48604e50ccfebe3a3e4684a75fec8a57435bf38df91faf6f24f86cb",
+    "transfer": "https://sepolia.etherscan.io/tx/0x952a35cd075ccf36eae7ae734ab5d2b3897fca4143eb246c5f28f739f9ac8505",
+    "nonceCheckpoint": "https://sepolia.etherscan.io/tx/0xd3c6ee1a0a487a894f8ba8a3bffb404ebcf82af6456026a91dee08939606b11d"
   },
-  "generatedAt": "2026-03-23T12:00:29.431Z"
+  "generatedAt": "2026-03-23T21:41:50.134Z"
 }
