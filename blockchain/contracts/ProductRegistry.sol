@@ -10,8 +10,11 @@ contract ProductRegistry {
         bytes32 productHash;
         string ipfsCid;
         address artisan;
+        address provenanceSigner;
         string productName;
         string giTag;
+        bytes32 metadataHash;
+        bytes deviceSignature;
         uint256 origin_lat;
         uint256 origin_lng;
         uint256 registeredAt;
@@ -23,8 +26,15 @@ contract ProductRegistry {
     IArtisanRegistry public immutable artisanRegistry;
 
     mapping(bytes32 => ProductRecord) public products;
+    mapping(bytes32 => mapping(bytes32 => bool)) public usedScanNonces;
 
     event ProductRegistered(bytes32 indexed productHash, address indexed artisan, string giTag);
+    event ProductProvenanceSigned(
+        bytes32 indexed productHash,
+        bytes32 indexed metadataHash,
+        address indexed signer,
+        bytes deviceSignature
+    );
     event ProductTransferred(
         bytes32 indexed productHash,
         address indexed from,
@@ -32,6 +42,13 @@ contract ProductRegistry {
         uint256 transferCount,
         uint256 royaltyBps,
         uint256 royaltyAmount
+    );
+    event ProductScanCheckpoint(
+        bytes32 indexed productHash,
+        bytes32 indexed nonce,
+        address indexed scanner,
+        bool replayed,
+        uint256 timestamp
     );
 
     constructor(address artisanRegistryAddress) {
@@ -44,24 +61,50 @@ contract ProductRegistry {
         string calldata cid,
         string calldata name,
         string calldata giTag,
+        bytes32 metadataHash,
+        address provenanceSigner,
+        bytes calldata deviceSignature,
         uint256 lat,
         uint256 lng
     ) external {
         require(artisanRegistry.isVerifiedArtisan(msg.sender), "Only verified artisans");
         require(products[hash].registeredAt == 0, "Product already registered");
+        require(metadataHash != bytes32(0), "Invalid metadata hash");
+        require(provenanceSigner != address(0), "Invalid signer");
 
         ProductRecord storage product = products[hash];
         product.productHash = hash;
         product.ipfsCid = cid;
         product.artisan = msg.sender;
+        product.provenanceSigner = provenanceSigner;
         product.productName = name;
         product.giTag = giTag;
+        product.metadataHash = metadataHash;
+        product.deviceSignature = deviceSignature;
         product.origin_lat = lat;
         product.origin_lng = lng;
         product.registeredAt = block.timestamp;
         product.transferCount = 0;
 
         emit ProductRegistered(hash, msg.sender, giTag);
+        emit ProductProvenanceSigned(hash, metadataHash, provenanceSigner, deviceSignature);
+    }
+
+    function checkpointScanNonce(bytes32 hash, bytes32 nonce) external returns (bool replayed) {
+        ProductRecord storage product = products[hash];
+        require(product.registeredAt != 0, "Product not found");
+        require(nonce != bytes32(0), "Invalid nonce");
+
+        replayed = usedScanNonces[hash][nonce];
+        if (!replayed) {
+            usedScanNonces[hash][nonce] = true;
+        }
+
+        emit ProductScanCheckpoint(hash, nonce, msg.sender, replayed, block.timestamp);
+    }
+
+    function isScanNonceUsed(bytes32 hash, bytes32 nonce) external view returns (bool) {
+        return usedScanNonces[hash][nonce];
     }
 
     function transferProduct(bytes32 hash, address newOwner) external payable {

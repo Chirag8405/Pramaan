@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
+import {
+  craftTypes,
+  detectCraft,
+  detectCraftWithConfidence,
+  getCraftModelMetadata,
+  giRegions
+} from "../../src/utils/craftDetector";
 import { uploadToIPFS } from "../../src/utils/ipfs";
 import { connectWallet, registerArtisan } from "../../src/utils/contract";
+import { appendEvidenceEntry } from "../../src/utils/evidence";
 
 const TRANSFER_EVENT_SIGNATURE =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -18,6 +25,8 @@ export default function ArtisanPage() {
   const [craftImage, setCraftImage] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [craftScore, setCraftScore] = useState(null);
+  const [craftConfidence, setCraftConfidence] = useState(null);
+  const [detectorSource, setDetectorSource] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [stepProgress, setStepProgress] = useState("");
   const [loading, setLoading] = useState(false);
@@ -106,10 +115,14 @@ export default function ArtisanPage() {
     setSuccess(null);
 
     try {
-      const score = await detectCraft(file, selectedCraft);
-      setCraftScore(score);
+      const result = await detectCraftWithConfidence(file, selectedCraft);
+      setCraftScore(result.score);
+      setCraftConfidence(result.confidence);
+      setDetectorSource(result.source);
     } catch (error) {
       setCraftScore(null);
+      setCraftConfidence(null);
+      setDetectorSource("");
       setMessage(error?.message || "Could not analyze the selected image.");
     } finally {
       setIsAnalyzing(false);
@@ -163,9 +176,13 @@ export default function ArtisanPage() {
       // Run detector to mimic the real path, then force stable demo output.
       await detectCraft(demoFile, form.craft);
       setCraftScore(22);
+      setCraftConfidence(0.22);
+      setDetectorSource("heuristic");
       setMessage("This stock image scored 22. Registration blocked at the contract level.");
     } catch (_error) {
       setCraftScore(22);
+      setCraftConfidence(0.22);
+      setDetectorSource("heuristic");
       setMessage("This stock image scored 22. Registration blocked at the contract level.");
     } finally {
       setIsAnalyzing(false);
@@ -231,6 +248,14 @@ export default function ArtisanPage() {
       const txHash = receipt?.transactionHash || receipt?.hash || "";
       const txUrl = txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "";
 
+      if (txUrl) {
+        appendEvidenceEntry({
+          action: "Artisan Registration",
+          txUrl,
+          notes: "Artisan SBT minted for " + form.name.trim()
+        });
+      }
+
       setSuccess({
         tokenId,
         txUrl
@@ -253,6 +278,7 @@ export default function ArtisanPage() {
   }
 
   const scoreInfo = getScoreDisplay(craftScore);
+  const modelMetadata = getCraftModelMetadata();
   const registerDisabled =
     loading || isAnalyzing || !craftImage || !form.name.trim() || typeof craftScore !== "number" || craftScore < 60;
 
@@ -338,6 +364,37 @@ export default function ArtisanPage() {
             }}
           >
             Score: {craftScore} - {scoreInfo.text}
+          </div>
+        )}
+
+        {typeof craftConfidence === "number" && (
+          <div
+            style={{
+              border: "1px solid #d7ebe2",
+              borderRadius: 10,
+              background: "#f8fcfa",
+              padding: "10px 12px",
+              color: "#31574d",
+              display: "grid",
+              gap: 4,
+              fontSize: 13
+            }}
+          >
+            <div>
+              Model Version: <strong>{modelMetadata.modelVersion}</strong>
+            </div>
+            <div>
+              Confidence: <strong>{Math.round(craftConfidence * 100)}%</strong>
+            </div>
+            <div>
+              Threshold: <strong>{Math.round(modelMetadata.confidenceThreshold * 100)}%</strong>
+            </div>
+            <div>
+              Inference Path: <strong>{detectorSource || "unknown"}</strong>
+            </div>
+            <div>
+              Caveat: {modelMetadata.falsePositiveCaveat}
+            </div>
           </div>
         )}
 

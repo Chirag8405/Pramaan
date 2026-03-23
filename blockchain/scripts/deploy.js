@@ -16,16 +16,20 @@ async function main() {
     console.log("ArtisanRegistry deployed at:", artisanRegistryAddress);
     console.log("ProductRegistry deployed at:", productRegistryAddress);
 
+    const networkName = hre.network.name;
     const deployedPath = path.join(__dirname, "..", "deployed.json");
+    const networkDeployedPath = path.join(__dirname, "..", `deployed.${networkName}.json`);
     const deployed = {
-        network: hre.network.name,
+        network: networkName,
         ArtisanRegistry: artisanRegistryAddress,
         ProductRegistry: productRegistryAddress,
         deployedAt: new Date().toISOString()
     };
 
     fs.writeFileSync(deployedPath, JSON.stringify(deployed, null, 2));
+    fs.writeFileSync(networkDeployedPath, JSON.stringify(deployed, null, 2));
     console.log("Deployment addresses saved to:", deployedPath);
+    console.log("Network artifact saved to:", networkDeployedPath);
 }
 
 main().catch((error) => {

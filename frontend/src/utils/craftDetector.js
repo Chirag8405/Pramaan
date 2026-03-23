@@ -20,6 +20,11 @@ export const giRegions = {
   "Bikaneri Bhujia": "Rajasthan"
 };
 
+const MODEL_VERSION = "craft-detector-v0.1.0";
+const DEFAULT_CONFIDENCE_THRESHOLD = 0.6;
+const DEFAULT_FALSE_POSITIVE_CAVEAT =
+  "Challenging lighting and stock-like studio compositions can increase false positives.";
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -68,6 +73,63 @@ async function fileToImageBitmap(imageFile) {
 }
 
 export async function detectCraft(imageFile, craftType) {
+  const detailed = await detectCraftWithConfidence(imageFile, craftType);
+  return detailed.score;
+}
+
+export function getCraftModelMetadata() {
+  return {
+    modelVersion: MODEL_VERSION,
+    confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
+    falsePositiveCaveat: DEFAULT_FALSE_POSITIVE_CAVEAT
+  };
+}
+
+async function getModelSession() {
+  const inferenceUrl = process.env.NEXT_PUBLIC_CRAFT_MODEL_INFERENCE_URL;
+  if (!inferenceUrl) {
+    return null;
+  }
+  return { inferenceUrl };
+}
+
+async function runModelInference(chw, craftType) {
+  const session = await getModelSession();
+  if (!session) {
+    return null;
+  }
+
+  const response = await fetch(session.inferenceUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      input: Array.from(chw),
+      shape: [1, 3, 224, 224],
+      craftType
+    })
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json();
+  if (typeof payload?.confidence !== "number") {
+    return null;
+  }
+
+  const confidence = clamp(Number(payload.confidence), 0, 1);
+  const score = Math.round(confidence * 100);
+
+  return {
+    score,
+    confidence,
+    craftType,
+    source: "onnx"
+  };
+}
+
+export async function detectCraftWithConfidence(imageFile, craftType) {
   if (!(imageFile instanceof File)) {
     throw new Error("detectCraft expects a File object as imageFile.");
   }
@@ -112,6 +174,18 @@ export async function detectCraft(imageFile, craftType) {
   const fileSize = Number(imageFile.size) || 0;
   const suspicious = isSuspiciousFilename(imageFile.name);
 
+  const modelResult = await runModelInference(chw, craftType).catch(() => null);
+  if (modelResult) {
+    return {
+      score: modelResult.score,
+      confidence: modelResult.confidence,
+      modelVersion: MODEL_VERSION,
+      confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
+      falsePositiveCaveat: DEFAULT_FALSE_POSITIVE_CAVEAT,
+      source: modelResult.source
+    };
+  }
+
   let score;
   if (suspicious) {
     score = 8 + (fileSize % 28); // 8..35
@@ -136,5 +210,13 @@ export async function detectCraft(imageFile, craftType) {
     }
   }
 
-  return clamp(Math.round(score), 0, 100);
+  const normalizedScore = clamp(Math.round(score), 0, 100);
+  return {
+    score: normalizedScore,
+    confidence: normalizedScore / 100,
+    modelVersion: MODEL_VERSION + "-fallback",
+    confidenceThreshold: DEFAULT_CONFIDENCE_THRESHOLD,
+    falsePositiveCaveat: DEFAULT_FALSE_POSITIVE_CAVEAT,
+    source: "heuristic"
+  };
 }

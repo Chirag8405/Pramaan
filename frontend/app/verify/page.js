@@ -5,7 +5,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
-import { getArtisan, getArtisanTokenId, verifyProduct } from "../../src/utils/contract";
+import {
+  checkpointScanNonce,
+  getArtisan,
+  getArtisanTokenId,
+  isScanNonceUsed,
+  verifyProduct
+} from "../../src/utils/contract";
+import { appendEvidenceEntry } from "../../src/utils/evidence";
 import { PRODUCT_REGISTRY_ADDRESS, RPC_URL } from "../../src/utils/constants";
 
 const PRODUCT_REGISTERED_EVENT = {
@@ -50,6 +57,9 @@ export default function VerifyPage() {
   const [status, setStatus] = useState("");
   const [resultType, setResultType] = useState(RESULT.NONE);
   const [resultData, setResultData] = useState(null);
+  const [scanNonce, setScanNonce] = useState("");
+  const [nonceUsed, setNonceUsed] = useState(null);
+  const [nonceStatus, setNonceStatus] = useState("");
   const [autoVerified, setAutoVerified] = useState(false);
   const [demoRunning, setDemoRunning] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
@@ -78,15 +88,33 @@ export default function VerifyPage() {
 
     const params = new URLSearchParams(window.location.search);
     const hashFromUrl = params.get("hash") || "";
+    const nonceFromUrl = params.get("nonce") || "";
 
     if (!hashFromUrl || autoVerified) {
       return;
     }
 
     setHash(hashFromUrl);
+    setScanNonce(nonceFromUrl);
     setAutoVerified(true);
-    runVerification(hashFromUrl);
+    runVerification(hashFromUrl, nonceFromUrl);
   }, [autoVerified]);
+
+  async function refreshNonceState(targetHash, targetNonce) {
+    if (!targetHash || !targetNonce) {
+      setNonceUsed(null);
+      return;
+    }
+
+    try {
+      const used = await isScanNonceUsed(targetHash, targetNonce);
+      setNonceUsed(Boolean(used));
+      setNonceStatus(Boolean(used) ? "Replay detected for this nonce." : "Nonce unused. One-time scan available.");
+    } catch (_error) {
+      setNonceUsed(null);
+      setNonceStatus("Could not check nonce status.");
+    }
+  }
 
   function truncateAddress(address) {
     if (!address) {
@@ -275,8 +303,9 @@ export default function VerifyPage() {
     return out;
   }
 
-  async function runVerification(inputHash) {
+  async function runVerification(inputHash, inputNonce = "") {
     const cleanHash = String(inputHash || "").trim();
+    const cleanNonce = String(inputNonce || scanNonce || "").trim();
     if (!cleanHash) {
       setStatus("Please enter a product hash.");
       return;
@@ -325,6 +354,7 @@ export default function VerifyPage() {
       setResultType(type);
       setResultData({
         hash: cleanHash,
+        nonce: cleanNonce,
         terroir,
         record,
         artisan,
@@ -335,6 +365,17 @@ export default function VerifyPage() {
         handlerChain,
         compromisedHandler
       });
+
+      if (eventMeta.registrationTxHash) {
+        appendEvidenceEntry({
+          action: "Verify",
+          productHash: cleanHash,
+          txUrl: "https://sepolia.etherscan.io/tx/" + eventMeta.registrationTxHash,
+          notes: "Verification lookup for product"
+        });
+      }
+
+      await refreshNonceState(cleanHash, cleanNonce);
       setStatus("Verification complete.");
     } catch (error) {
       const text = String(error?.shortMessage || error?.message || "").toLowerCase();
@@ -354,7 +395,32 @@ export default function VerifyPage() {
 
   async function onVerify(event) {
     event.preventDefault();
-    await runVerification(hash);
+    await runVerification(hash, scanNonce);
+  }
+
+  async function onCheckpointNonce() {
+    if (!resultData?.hash || !scanNonce) {
+      setNonceStatus("Enter a nonce to checkpoint.");
+      return;
+    }
+
+    setNonceStatus("Submitting nonce checkpoint on-chain...");
+    try {
+      const receipt = await checkpointScanNonce(resultData.hash, scanNonce);
+      const txHash = receipt?.transactionHash || receipt?.hash || "";
+      await refreshNonceState(resultData.hash, scanNonce);
+      if (txHash) {
+        appendEvidenceEntry({
+          action: "Nonce Checkpoint",
+          productHash: resultData.hash,
+          txUrl: "https://sepolia.etherscan.io/tx/" + txHash,
+          notes: "scan nonce " + scanNonce
+        });
+      }
+      setNonceStatus("Nonce checkpoint submitted.");
+    } catch (error) {
+      setNonceStatus(error?.shortMessage || error?.message || "Failed to checkpoint nonce.");
+    }
   }
 
   const resultHeader = useMemo(() => {
@@ -403,6 +469,12 @@ export default function VerifyPage() {
           value={hash}
           onChange={(e) => setHash(e.target.value)}
           placeholder="0x..."
+          style={inputStyle}
+        />
+        <input
+          value={scanNonce}
+          onChange={(e) => setScanNonce(e.target.value)}
+          placeholder="Scan nonce (optional, 0x...)"
           style={inputStyle}
         />
         <button disabled={loading} type="submit" style={buttonStyle}>
@@ -544,6 +616,11 @@ export default function VerifyPage() {
             <p style={textStyle}>Craft Type: {resultData.artisan?.craft || "Unknown"}</p>
             <p style={textStyle}>SBT Token ID: {resultData.sbtId}</p>
             <p style={textStyle}>Registered: {formatDate(resultData.record.registeredAt)}</p>
+            <p style={textStyle}>Provenance Signer: {truncateAddress(resultData.record.provenanceSigner)}</p>
+            <p style={textStyle}>Metadata Hash: {resultData.record.metadataHash}</p>
+            <p style={textStyle}>
+              Device Signature: {resultData.record.deviceSignature ? "Present" : "Not provided"}
+            </p>
             <p style={textStyle}>
               Origin GPS: {resultData.regionLabel} ({(Number(resultData.record.origin_lat) / 1000000).toFixed(6)},
               {(Number(resultData.record.origin_lng) / 1000000).toFixed(6)})
@@ -628,6 +705,23 @@ export default function VerifyPage() {
             <Link href={"/transfer?hash=" + resultData.hash} style={linkButtonStyle}>
               Go to Transfer Demo
             </Link>
+          </div>
+
+          <div style={cardStyle}>
+            <h3 style={{ marginTop: 0 }}>Anti-Clone Nonce Checkpoint</h3>
+            <p style={{ margin: 0, color: "#466" }}>
+              One-time nonce scan can be checkpointed on-chain. Replayed scans are flagged suspicious.
+            </p>
+            <p style={textStyle}>Nonce: {scanNonce || "-"}</p>
+            {nonceUsed !== null && (
+              <p style={{ ...textStyle, color: nonceUsed ? "#8a1f1f" : "#1a6f50", fontWeight: 700 }}>
+                {nonceUsed ? "Replayed scan detected" : "Nonce available"}
+              </p>
+            )}
+            {nonceStatus && <p style={textStyle}>{nonceStatus}</p>}
+            <button type="button" style={buttonStyle} onClick={onCheckpointNonce}>
+              Checkpoint Scan Nonce
+            </button>
           </div>
         </>
       )}

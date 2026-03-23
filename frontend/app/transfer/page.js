@@ -7,6 +7,7 @@ import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
 import { getArtisan, transferProduct, verifyProduct } from "../../src/utils/contract";
 import { RPC_URL } from "../../src/utils/constants";
+import { appendEvidenceEntry } from "../../src/utils/evidence";
 
 const publicClient = createPublicClient({
   chain: sepolia,
@@ -190,6 +191,14 @@ export default function TransferPage() {
       setRecordState(refreshed);
 
       const txHash = receipt?.transactionHash || receipt?.hash || "";
+      if (txHash) {
+        appendEvidenceEntry({
+          action: "Transfer",
+          productHash: hash.trim(),
+          txUrl: "https://sepolia.etherscan.io/tx/" + txHash,
+          notes: "Transferred to " + targetAddress
+        });
+      }
       setTransferSuccess({
         txUrl: txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "",
         newTerroir: refreshed.terroir,

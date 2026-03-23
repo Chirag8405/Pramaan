@@ -29,6 +29,16 @@ const demoProducts = [
   { name: "Alphonso Mango Batch 12", terroir: 61, artisan: "Suresh Patil" }
 ];
 
+const quickDemoLinks = [
+  { label: "Artisan Flow", href: "/artisan" },
+  { label: "Register Product", href: "/register-product" },
+  { label: "Transfer", href: "/transfer" },
+  { label: "Verify", href: "/verify" },
+  { label: "Attack Demo", href: "/verify" },
+  { label: "Live Monitor", href: "/monitor" },
+  { label: "Evidence", href: "/evidence" }
+];
+
 export default function HomePage() {
   const [hash, setHash] = useState("");
   const router = useRouter();
@@ -277,6 +287,20 @@ export default function HomePage() {
               <TerritorScore score={product.terroir} />
               <Link href="/verify" className="prov-btn">
                 View Full Provenance
+              </Link>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="section-title">Quick Demo Checklist</h2>
+        <div className="product-grid">
+          {quickDemoLinks.map((item) => (
+            <article key={item.href + item.label} className="product-card">
+              <h4>{item.label}</h4>
+              <Link href={item.href} className="prov-btn">
+                Open {item.href}
               </Link>
             </article>
           ))}

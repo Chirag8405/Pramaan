@@ -6,7 +6,8 @@ import QRCode from "qrcode";
 import TerritorScore from "../../components/TerritorScore";
 import { giRegions } from "../../src/utils/craftDetector";
 import { getArtisan, getArtisanTokenId, connectWallet, registerProduct } from "../../src/utils/contract";
-import { hashProduct } from "../../src/utils/hash";
+import { hashMetadataObject, hashProduct, makeScanNonce } from "../../src/utils/hash";
+import { appendEvidenceEntry } from "../../src/utils/evidence";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
 
 export default function RegisterProductPage() {
@@ -21,7 +22,9 @@ export default function RegisterProductPage() {
     giTag: "",
     lat: "",
     lng: "",
-    batchSize: ""
+    batchSize: "",
+    deviceSignature: "",
+    certificateFormat: "nfc-ready"
   });
 
   const [productImage, setProductImage] = useState(null);
@@ -183,6 +186,13 @@ export default function RegisterProductPage() {
           <p class="item"><span class="label">GI Tag:</span> ${escapedGiTag}</p>
           <p class="item"><span class="label">Registration Date:</span> ${escapedDate}</p>
           <p class="item"><span class="label">Terroir Score:</span> <span class="score">100</span></p>
+          ${
+            successData.nfcPayload
+              ? `<p class="item"><span class="label">NFC Payload:</span> <span style="word-break: break-all;">${String(
+                  successData.nfcPayload
+                ).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</span></p>`
+              : ""
+          }
         </div>
         <div class="qr">
           <img src="${successData.qrDataUrl}" alt="Product verification QR" />
@@ -231,20 +241,37 @@ export default function RegisterProductPage() {
       const latScaled = Math.round(Number(form.lat) * 1000000);
       const lngScaled = Math.round(Number(form.lng) * 1000000);
 
+      const metadataPayload = {
+        productHash,
+        cid,
+        name: form.name.trim(),
+        giTag: form.giTag.trim(),
+        latScaled,
+        lngScaled,
+        registeredBy: artisan?.wallet || walletAddress
+      };
+      const metadataHash = await hashMetadataObject(metadataPayload);
+      const nonce = makeScanNonce();
+
       const receipt = await registerProduct(
         productHash,
         cid,
         form.name.trim(),
         form.giTag.trim(),
         latScaled,
-        lngScaled
+        lngScaled,
+        {
+          metadataHash,
+          signerAddress: artisan?.wallet || walletAddress,
+          deviceSignature: form.deviceSignature.trim() || undefined
+        }
       );
 
       setStepProgress("Step 3/3: Confirming...");
 
       const txHash = receipt?.transactionHash || receipt?.hash || "";
       const ipfsUrl = getIPFSUrl(cid);
-      const verifyUrl = "/verify?hash=" + productHash;
+      const verifyUrl = "/verify?hash=" + productHash + "&nonce=" + nonce;
       const transferUrl = "/transfer?hash=" + productHash;
       const verifyAbsoluteUrl =
         (typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app") + verifyUrl;
@@ -260,8 +287,31 @@ export default function RegisterProductPage() {
         productName: form.name.trim(),
         artisanName: String(artisan?.name || "Unknown Artisan"),
         giTag: form.giTag.trim(),
-        registrationDate: new Date().toLocaleString()
+        registrationDate: new Date().toLocaleString(),
+        metadataHash,
+        signerAddress: artisan?.wallet || walletAddress,
+        nonce,
+        nfcPayload:
+          form.certificateFormat === "nfc-ready"
+            ? JSON.stringify({
+                type: "pramaan.nfc",
+                hash: productHash,
+                nonce,
+                metadataHash,
+                signer: artisan?.wallet || walletAddress,
+                ts: Date.now()
+              })
+            : ""
       });
+
+      if (txHash) {
+        appendEvidenceEntry({
+          action: "Product Registration",
+          productHash,
+          txUrl: "https://sepolia.etherscan.io/tx/" + txHash,
+          notes: "nonce=" + nonce + " metadataHash=" + metadataHash
+        });
+      }
 
       setStatusText("Product registered successfully.");
     } catch (error) {
@@ -369,6 +419,22 @@ export default function RegisterProductPage() {
           style={inputStyle}
         />
 
+        <input
+          placeholder="Optional device key/signature"
+          value={form.deviceSignature}
+          onChange={(e) => setForm({ ...form, deviceSignature: e.target.value })}
+          style={inputStyle}
+        />
+
+          <select
+            value={form.certificateFormat}
+            onChange={(e) => setForm({ ...form, certificateFormat: e.target.value })}
+            style={inputStyle}
+          >
+            <option value="standard">Certificate format: Standard QR</option>
+            <option value="nfc-ready">Certificate format: NFC-ready payload</option>
+          </select>
+
         <input type="file" accept="image/*" required onChange={onImageChange} style={inputStyle} />
 
         {previewUrl && (
@@ -410,6 +476,9 @@ export default function RegisterProductPage() {
         <div style={cardStyle}>
           <h3 style={{ marginTop: 0, marginBottom: 8, color: "#1f6d50" }}>Registration Complete</h3>
           <p style={textStyle}>Product hash: {success.productHash}</p>
+          <p style={textStyle}>Metadata hash: {success.metadataHash}</p>
+          <p style={textStyle}>Signer: {success.signerAddress}</p>
+          <p style={textStyle}>One-time nonce: {success.nonce}</p>
           <p style={textStyle}>
             IPFS Image:{" "}
             <a href={success.ipfsUrl} target="_blank" rel="noreferrer" style={linkStyle}>
@@ -455,6 +524,22 @@ export default function RegisterProductPage() {
           >
             Download Certificate
           </button>
+
+          <pre
+            style={{
+              margin: "8px 0 0",
+              background: "#f3faf7",
+              border: "1px solid #d2e9df",
+              borderRadius: 8,
+              padding: 10,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              color: "#2a564a",
+              fontSize: 12
+            }}
+          >
+            NFC payload: {success.nfcPayload}
+          </pre>
 
           <Link href={success.transferUrl} style={buttonStyle}>
             Transfer Ownership

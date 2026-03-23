@@ -129,7 +129,7 @@ export async function registerArtisan(name, craft, giRegion, craftScore) {
   return waitForTransactionReceipt(config, { hash: txHash });
 }
 
-export async function registerProduct(hash, cid, name, giTag, lat, lng) {
+export async function registerProduct(hash, cid, name, giTag, lat, lng, provenancePayload = {}) {
   assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
   assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 
@@ -146,11 +146,41 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
     throw new Error("Only verified artisans can register products.");
   }
 
+  const walletClient = await getWalletClient(config);
+  if (!walletClient) {
+    throw new Error("Wallet signer not available for provenance signing.");
+  }
+
+  const provenanceMessage = [
+    "Pramaan Product Provenance",
+    "hash:" + hash,
+    "cid:" + cid,
+    "name:" + name,
+    "giTag:" + giTag,
+    "lat:" + String(lat),
+    "lng:" + String(lng)
+  ].join("\n");
+
+  const deviceSignature =
+    provenancePayload.deviceSignature || (await walletClient.signMessage({ message: provenanceMessage }));
+  const metadataHash = provenancePayload.metadataHash || hash;
+  const signerAddress = provenancePayload.signerAddress || artisanAddress;
+
   const txHash = await writeContract(config, {
     address: PRODUCT_REGISTRY_ADDRESS,
     abi: PRODUCT_ABI,
     functionName: "registerProduct",
-    args: [hash, cid, name, giTag, BigInt(lat), BigInt(lng)]
+    args: [
+      hash,
+      cid,
+      name,
+      giTag,
+      metadataHash,
+      signerAddress,
+      deviceSignature,
+      BigInt(lat),
+      BigInt(lng)
+    ]
   });
 
   return waitForTransactionReceipt(config, { hash: txHash });
@@ -201,6 +231,32 @@ export async function verifyProduct(hash) {
 
   const terroir = Math.max(0, Math.min(100, Number(terroirRaw)));
   return { record, terroir };
+}
+
+export async function checkpointScanNonce(hash, nonce) {
+  assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
+
+  await connectWallet();
+
+  const txHash = await writeContract(config, {
+    address: PRODUCT_REGISTRY_ADDRESS,
+    abi: PRODUCT_ABI,
+    functionName: "checkpointScanNonce",
+    args: [hash, nonce]
+  });
+
+  return waitForTransactionReceipt(config, { hash: txHash });
+}
+
+export async function isScanNonceUsed(hash, nonce) {
+  assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
+
+  return readContract(config, {
+    address: PRODUCT_REGISTRY_ADDRESS,
+    abi: PRODUCT_ABI,
+    functionName: "isScanNonceUsed",
+    args: [hash, nonce]
+  });
 }
 
 export async function getArtisan(address) {
