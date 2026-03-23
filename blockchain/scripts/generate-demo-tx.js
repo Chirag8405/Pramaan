@@ -10,65 +10,102 @@ function loadDeployment(networkName) {
   return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
 }
 
-async function getDeploymentStartBlock(provider, deployTxHash) {
-  if (!deployTxHash) {
-    return 0;
-  }
-  const receipt = await provider.getTransactionReceipt(deployTxHash);
-  return receipt?.blockNumber ?? 0;
-}
+async function ensureVerifiedArtisan(artisanRegistry, signerAddress) {
+  const result = {
+    registrationTx: "",
+    aadhaarTx: ""
+  };
 
-async function getOrCreateArtisanRegistrationTx(artisanRegistry, signerAddress, fromBlock) {
-  const alreadyVerified = await artisanRegistry.isVerifiedArtisan(signerAddress);
-
-  if (!alreadyVerified) {
-    const tx = await artisanRegistry.registerArtisan(
+  const profile = await artisanRegistry.getArtisan(signerAddress);
+  if (!profile?.registeredAt || profile.registeredAt === 0n) {
+    const registerTx = await artisanRegistry.registerArtisan(
       "Demo Artisan",
       "Blue Pottery",
       "Jaipur",
       85
     );
-    await tx.wait();
-    return tx.hash;
+    await registerTx.wait();
+    result.registrationTx = registerTx.hash;
   }
 
-  const filter = artisanRegistry.filters.ArtisanRegistered(signerAddress);
-  const events = await artisanRegistry.queryFilter(filter, fromBlock, "latest");
-  const latest = events[events.length - 1];
-  return latest?.transactionHash || "";
+  const isVerified = await artisanRegistry.isVerifiedArtisan(signerAddress);
+  if (!isVerified) {
+    const aadhaarTx = await artisanRegistry.markAadhaarVerified(signerAddress);
+    await aadhaarTx.wait();
+    result.aadhaarTx = aadhaarTx.hash;
+  }
+
+  const verifiedNow = await artisanRegistry.isVerifiedArtisan(signerAddress);
+  if (!verifiedNow) {
+    throw new Error("Signer is not verified after onboarding checks");
+  }
+
+  return result;
 }
 
 async function main() {
   const networkName = hre.network.name;
-  const provider = hre.ethers.provider;
   const [signer] = await hre.ethers.getSigners();
 
   const deployed = loadDeployment(networkName);
   const artisanRegistry = await hre.ethers.getContractAt("ArtisanRegistry", deployed.ArtisanRegistry);
   const productRegistry = await hre.ethers.getContractAt("ProductRegistry", deployed.ProductRegistry);
 
-  const fromBlock = await getDeploymentStartBlock(provider, deployed?.deployTx?.ArtisanRegistry);
-
-  const artisanRegistrationTx = await getOrCreateArtisanRegistrationTx(
+  const artisanSetup = await ensureVerifiedArtisan(
     artisanRegistry,
-    signer.address,
-    fromBlock
+    signer.address
   );
 
   const productHash = hre.ethers.hexlify(hre.ethers.randomBytes(32));
   const metadataHash = hre.ethers.keccak256(hre.ethers.toUtf8Bytes(`metadata:${productHash}`));
   const nonce = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+  const cid = "bafybeigdyrztfaketestcidforjudgepacket123456789";
+  const productName = "Demo Product Batch";
+  const giTag = "Blue Pottery";
+  const lat = 26912345;
+  const lng = 75412345;
+
+  const attestationEncoded = hre.ethers.AbiCoder.defaultAbiCoder().encode(
+    [
+      "uint256",
+      "address",
+      "bytes32",
+      "bytes32",
+      "address",
+      "address",
+      "string",
+      "string",
+      "string",
+      "uint256",
+      "uint256"
+    ],
+    [
+      BigInt(hre.network.config.chainId || 0),
+      deployed.ProductRegistry,
+      productHash,
+      metadataHash,
+      signer.address,
+      signer.address,
+      cid,
+      productName,
+      giTag,
+      lat,
+      lng
+    ]
+  );
+  const attestationDigest = hre.ethers.keccak256(attestationEncoded);
+  const deviceSignature = await signer.signMessage(hre.ethers.getBytes(attestationDigest));
 
   const registerTx = await productRegistry.registerProduct(
     productHash,
-    "bafybeigdyrztfaketestcidforjudgepacket123456789",
-    "Demo Product Batch",
-    "Blue Pottery",
+    cid,
+    productName,
+    giTag,
     metadataHash,
     signer.address,
-    "0x1234",
-    26912345,
-    75412345
+    deviceSignature,
+    lat,
+    lng
   );
   await registerTx.wait();
 
@@ -89,13 +126,15 @@ async function main() {
     productHash,
     nonce,
     tx: {
-      artisanRegistration: artisanRegistrationTx,
+      artisanRegistration: artisanSetup.registrationTx,
+      aadhaarVerification: artisanSetup.aadhaarTx,
       productRegistration: registerTx.hash,
       transfer: transferTx.hash,
       nonceCheckpoint: checkpointTx.hash
     },
     links: {
-      artisanRegistration: artisanRegistrationTx ? `${explorerBase}/tx/${artisanRegistrationTx}` : "",
+      artisanRegistration: artisanSetup.registrationTx ? `${explorerBase}/tx/${artisanSetup.registrationTx}` : "",
+      aadhaarVerification: artisanSetup.aadhaarTx ? `${explorerBase}/tx/${artisanSetup.aadhaarTx}` : "",
       productRegistration: `${explorerBase}/tx/${registerTx.hash}`,
       transfer: `${explorerBase}/tx/${transferTx.hash}`,
       nonceCheckpoint: `${explorerBase}/tx/${checkpointTx.hash}`
@@ -108,6 +147,9 @@ async function main() {
 
   console.log("Demo tx artifact written:", outPath);
   console.log("Artisan registration tx:", output.links.artisanRegistration || output.tx.artisanRegistration);
+  if (output.links.aadhaarVerification || output.tx.aadhaarVerification) {
+    console.log("Aadhaar verification tx:", output.links.aadhaarVerification || output.tx.aadhaarVerification);
+  }
   console.log("Product registration tx:", output.links.productRegistration);
   console.log("Transfer tx:", output.links.transfer);
   console.log("Nonce checkpoint tx:", output.links.nonceCheckpoint);
