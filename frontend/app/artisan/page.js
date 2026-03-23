@@ -1,21 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  craftTypes,
-  detectCraft,
-  detectCraftWithConfidence,
-  getCraftModelMetadata,
-  giRegions
-} from "../../src/utils/craftDetector";
+import { useRouter } from "next/navigation";
+import { LogInWithAnonAadhaar, useAnonAadhaar } from "@anon-aadhaar/react";
+import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
 import { uploadToIPFS } from "../../src/utils/ipfs";
-import { connectWallet, registerArtisan } from "../../src/utils/contract";
-import { appendEvidenceEntry } from "../../src/utils/evidence";
+import { connectWallet, markAadhaarVerified, registerArtisan } from "../../src/utils/contract";
 
 const TRANSFER_EVENT_SIGNATURE =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const DEFAULT_AADHAAR_NULLIFIER_SEED = 12345n;
+
+function getAadhaarNullifierSeed() {
+  const rawSeed = process.env.NEXT_PUBLIC_AADHAAR_NULLIFIER_SEED;
+  if (typeof rawSeed === "string" && /^\d+$/.test(rawSeed)) {
+    try {
+      return BigInt(rawSeed);
+    } catch (_error) {
+      return DEFAULT_AADHAAR_NULLIFIER_SEED;
+    }
+  }
+  return DEFAULT_AADHAAR_NULLIFIER_SEED;
+}
 
 export default function ArtisanPage() {
+  const router = useRouter();
+  const [anonAadhaar] = useAnonAadhaar();
+  const aadhaarNullifierSeed = getAadhaarNullifierSeed();
+  const [hydrated, setHydrated] = useState(false);
+
   const [form, setForm] = useState({
     name: "",
     craft: craftTypes[0],
@@ -25,22 +38,117 @@ export default function ArtisanPage() {
   const [craftImage, setCraftImage] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const [craftScore, setCraftScore] = useState(null);
-  const [craftConfidence, setCraftConfidence] = useState(null);
-  const [detectorSource, setDetectorSource] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [stepProgress, setStepProgress] = useState("");
   const [loading, setLoading] = useState(false);
+  const [syncingAadhaar, setSyncingAadhaar] = useState(false);
+  const [aadhaarSyncedOnChain, setAadhaarSyncedOnChain] = useState(false);
+  const [autoSyncAttempted, setAutoSyncAttempted] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(null);
-  const [projectedPriceEth, setProjectedPriceEth] = useState(0.1);
 
-  const projectedRoyaltyRows = [
-    { transfer: 1, percent: 40 },
-    { transfer: 2, percent: 28 },
-    { transfer: 3, percent: 23 },
-    { transfer: 5, percent: 18 },
-    { transfer: 10, percent: 13 }
-  ];
+  const anonStatus = anonAadhaar?.status || "logged-out";
+  const isAnonVerified = anonStatus === "logged-in";
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
+  function getAnonStatusMeta(status) {
+    if (status === "logged-in") {
+      return {
+        bg: "#ddf9eb",
+        color: "#186d4c",
+        label: "Anon Aadhaar proof verified locally"
+      };
+    }
+
+    if (status === "logging-in") {
+      return {
+        bg: "#fff1d1",
+        color: "#8a5b09",
+        label: "Generating proof..."
+      };
+    }
+
+    return {
+      bg: "#ffe9e9",
+      color: "#8a1f1f",
+      label: "Proof not completed"
+    };
+  }
+
+  async function onSyncAadhaarOnChain() {
+    if (!isAnonVerified) {
+      setMessage("Complete Anon Aadhaar proof first.");
+      return;
+    }
+
+    setSyncingAadhaar(true);
+    setMessage("");
+
+    try {
+      const connected = await connectWallet();
+      setWallet(connected.address);
+
+      await markAadhaarVerified(connected.address);
+      setAadhaarSyncedOnChain(true);
+      setMessage("Aadhaar verification synced on-chain for this wallet. Now click Register Artisan to mint identity.");
+    } catch (error) {
+      setAadhaarSyncedOnChain(false);
+      setMessage(
+        error?.shortMessage ||
+        error?.message ||
+        "Could not sync Aadhaar status on-chain. Ensure this wallet has verifier role."
+      );
+    } finally {
+      setSyncingAadhaar(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!wallet || !isAnonVerified) {
+      setAutoSyncAttempted(false);
+      setAadhaarSyncedOnChain(false);
+      return;
+    }
+
+    if (aadhaarSyncedOnChain || autoSyncAttempted || syncingAadhaar) {
+      return;
+    }
+
+    let active = true;
+
+    async function autoSync() {
+      setAutoSyncAttempted(true);
+      setSyncingAadhaar(true);
+
+      try {
+        await markAadhaarVerified(wallet);
+        if (!active) {
+          return;
+        }
+        setAadhaarSyncedOnChain(true);
+        setMessage("Anon Aadhaar verified and auto-synced on-chain.");
+      } catch (_error) {
+        if (!active) {
+          return;
+        }
+        // Non-blocking: keep manual sync available even if auto sync fails.
+        setAadhaarSyncedOnChain(false);
+      } finally {
+        if (active) {
+          setSyncingAadhaar(false);
+        }
+      }
+    }
+
+    void autoSync();
+
+    return () => {
+      active = false;
+    };
+  }, [wallet, isAnonVerified, aadhaarSyncedOnChain, autoSyncAttempted, syncingAadhaar]);
 
   async function onConnect() {
     try {
@@ -100,11 +208,6 @@ export default function ArtisanPage() {
     };
   }
 
-  function formatEth(value) {
-    const normalized = Number(value || 0);
-    return normalized.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") || "0";
-  }
-
   async function runCraftAnalysis(file, selectedCraft) {
     if (!file || !selectedCraft) {
       return;
@@ -115,14 +218,10 @@ export default function ArtisanPage() {
     setSuccess(null);
 
     try {
-      const result = await detectCraftWithConfidence(file, selectedCraft);
-      setCraftScore(result.score);
-      setCraftConfidence(result.confidence);
-      setDetectorSource(result.source);
+      const score = await detectCraft(file, selectedCraft);
+      setCraftScore(score);
     } catch (error) {
       setCraftScore(null);
-      setCraftConfidence(null);
-      setDetectorSource("");
       setMessage(error?.message || "Could not analyze the selected image.");
     } finally {
       setIsAnalyzing(false);
@@ -176,13 +275,9 @@ export default function ArtisanPage() {
       // Run detector to mimic the real path, then force stable demo output.
       await detectCraft(demoFile, form.craft);
       setCraftScore(22);
-      setCraftConfidence(0.22);
-      setDetectorSource("heuristic");
       setMessage("This stock image scored 22. Registration blocked at the contract level.");
     } catch (_error) {
       setCraftScore(22);
-      setCraftConfidence(0.22);
-      setDetectorSource("heuristic");
       setMessage("This stock image scored 22. Registration blocked at the contract level.");
     } finally {
       setIsAnalyzing(false);
@@ -208,6 +303,11 @@ export default function ArtisanPage() {
   async function onSubmit(event) {
     event.preventDefault();
 
+    if (!isAnonVerified) {
+      setMessage("Please complete Anon Aadhaar verification before registering.");
+      return;
+    }
+
     if (!craftImage) {
       setMessage("Please upload a craft image before registering.");
       return;
@@ -229,11 +329,12 @@ export default function ArtisanPage() {
     setStepProgress("Step 1/3: Uploading craft image to IPFS...");
 
     try {
-      await connectWallet();
-      await uploadToIPFS(craftImage);
+      setStepProgress("Step 1/3: Connecting wallet...");
+      const connected = await connectWallet();
+      setWallet(connected.address);
 
-      setStepProgress("Step 2/3: Minting your Soulbound Identity Token...");
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      setStepProgress("Step 2/3: Uploading craft image to IPFS...");
+      await uploadToIPFS(craftImage);
 
       setStepProgress("Step 3/3: Confirming on Sepolia...");
 
@@ -248,26 +349,21 @@ export default function ArtisanPage() {
       const txHash = receipt?.transactionHash || receipt?.hash || "";
       const txUrl = txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "";
 
-      if (txUrl) {
-        appendEvidenceEntry({
-          action: "Artisan Registration",
-          txUrl,
-          notes: "Artisan SBT minted for " + form.name.trim()
-        });
-      }
-
       setSuccess({
         tokenId,
         txUrl
       });
-      setMessage("Artisan identity minted successfully.");
+      setMessage("Artisan identity minted successfully. Redirecting to product registration...");
+      setTimeout(() => {
+        router.push("/register-product");
+      }, 1200);
     } catch (error) {
       const raw = String(error?.shortMessage || error?.message || "").toLowerCase();
 
       if (raw.includes("craft score too low") || raw.includes("below 60")) {
         setMessage("Smart contract rejected: craft score below 60");
       } else if (raw.includes("already registered") || raw.includes("artisan already registered")) {
-        setMessage("This wallet already has an artisan identity");
+        setMessage("This wallet already has an artisan identity. Registration was skipped.");
       } else {
         setMessage(error?.shortMessage || error?.message || "Registration failed.");
       }
@@ -278,9 +374,24 @@ export default function ArtisanPage() {
   }
 
   const scoreInfo = getScoreDisplay(craftScore);
-  const modelMetadata = getCraftModelMetadata();
+  const anonStatusInfo = getAnonStatusMeta(anonStatus);
   const registerDisabled =
-    loading || isAnalyzing || !craftImage || !form.name.trim() || typeof craftScore !== "number" || craftScore < 60;
+    loading ||
+    isAnalyzing ||
+    !isAnonVerified ||
+    !craftImage ||
+    !form.name.trim() ||
+    typeof craftScore !== "number" ||
+    craftScore < 60;
+
+  if (!hydrated) {
+    return (
+      <section style={{ display: "grid", gap: 16 }}>
+        <h1 style={{ margin: 0 }}>Register as Artisan</h1>
+        <p style={{ margin: 0, color: "#466" }}>Loading secure verification...</p>
+      </section>
+    );
+  }
 
   return (
     <section style={{ display: "grid", gap: 16 }}>
@@ -327,6 +438,64 @@ export default function ArtisanPage() {
           style={inputStyle}
         />
 
+        <div
+          style={{
+            border: "1px solid #d9ebe4",
+            borderRadius: 10,
+            padding: 12,
+            background: "#f8fcfa",
+            display: "grid",
+            gap: 10
+          }}
+        >
+          <div style={{ fontWeight: 700, color: "#1f5b4b" }}>Anon Aadhaar Verification</div>
+          <div
+            style={{
+              background: anonStatusInfo.bg,
+              color: anonStatusInfo.color,
+              border: "1px solid " + anonStatusInfo.color,
+              borderRadius: 8,
+              padding: "8px 10px",
+              fontWeight: 700
+            }}
+          >
+            {anonStatusInfo.label}
+          </div>
+
+          <LogInWithAnonAadhaar nullifierSeed={aadhaarNullifierSeed} fieldsToReveal={[]} />
+
+          <button
+            type="button"
+            onClick={onSyncAadhaarOnChain}
+            disabled={!isAnonVerified || syncingAadhaar}
+            style={{
+              ...buttonStyle,
+              background: !isAnonVerified || syncingAadhaar ? "#9bc2b4" : "#1D9E75"
+            }}
+          >
+            {syncingAadhaar
+              ? "Syncing Aadhaar..."
+              : aadhaarSyncedOnChain
+                ? "Aadhaar Synced On-Chain"
+                : "Sync Aadhaar Status On-Chain (wallet prompt)"}
+          </button>
+
+          {aadhaarSyncedOnChain && (
+            <div
+              style={{
+                border: "1px solid #3e9f74",
+                background: "#dcf8e8",
+                color: "#1c664c",
+                borderRadius: 8,
+                padding: "8px 10px",
+                fontWeight: 700
+              }}
+            >
+              On-chain Aadhaar flag updated for connected wallet.
+            </div>
+          )}
+        </div>
+
         <input
           required
           type="file"
@@ -364,37 +533,6 @@ export default function ArtisanPage() {
             }}
           >
             Score: {craftScore} - {scoreInfo.text}
-          </div>
-        )}
-
-        {typeof craftConfidence === "number" && (
-          <div
-            style={{
-              border: "1px solid #d7ebe2",
-              borderRadius: 10,
-              background: "#f8fcfa",
-              padding: "10px 12px",
-              color: "#31574d",
-              display: "grid",
-              gap: 4,
-              fontSize: 13
-            }}
-          >
-            <div>
-              Model Version: <strong>{modelMetadata.modelVersion}</strong>
-            </div>
-            <div>
-              Confidence: <strong>{Math.round(craftConfidence * 100)}%</strong>
-            </div>
-            <div>
-              Threshold: <strong>{Math.round(modelMetadata.confidenceThreshold * 100)}%</strong>
-            </div>
-            <div>
-              Inference Path: <strong>{detectorSource || "unknown"}</strong>
-            </div>
-            <div>
-              Caveat: {modelMetadata.falsePositiveCaveat}
-            </div>
           </div>
         )}
 
@@ -441,66 +579,6 @@ export default function ArtisanPage() {
               View on Etherscan
             </a>
           )}
-
-          <div
-            style={{
-              marginTop: 14,
-              background: "#ffffff",
-              border: "1px solid #b9dfcf",
-              borderRadius: 10,
-              padding: "12px 12px 14px"
-            }}
-          >
-            <h3 style={{ margin: "0 0 10px", color: "#184f3e" }}>Your Projected Earnings</h3>
-
-            <label style={{ display: "grid", gap: 8, marginBottom: 12, color: "#355", fontWeight: 600 }}>
-              Set your product price (ETH)
-              <input
-                type="range"
-                min="0.01"
-                max="2"
-                step="0.01"
-                value={projectedPriceEth}
-                onChange={(event) => setProjectedPriceEth(Number(event.target.value))}
-                style={{ width: "100%" }}
-              />
-              <span style={{ fontWeight: 700, color: "#1b5f49" }}>{formatEth(projectedPriceEth)} ETH</span>
-            </label>
-
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead>
-                  <tr style={{ background: "#eff8f4", color: "#274f45" }}>
-                    <th style={{ textAlign: "left", padding: "8px", border: "1px solid #d7ebe2" }}>Transfer</th>
-                    <th style={{ textAlign: "left", padding: "8px", border: "1px solid #d7ebe2" }}>Royalty</th>
-                    <th style={{ textAlign: "left", padding: "8px", border: "1px solid #d7ebe2" }}>Projected Earnings</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {projectedRoyaltyRows.map((row) => {
-                    const payout = (projectedPriceEth * row.percent) / 100;
-                    return (
-                      <tr key={row.transfer}>
-                        <td style={{ padding: "8px", border: "1px solid #e1efe9", color: "#355" }}>Transfer {row.transfer}</td>
-                        <td style={{ padding: "8px", border: "1px solid #e1efe9", color: "#355" }}>{row.percent}% royalty</td>
-                        <td style={{ padding: "8px", border: "1px solid #e1efe9", color: "#1f6d50", fontWeight: 700 }}>
-                          At Transfer {row.transfer}: you receive {formatEth(payout)} ETH of a {formatEth(projectedPriceEth)} ETH sale
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <p style={{ margin: "10px 0 0", color: "#355", fontWeight: 600 }}>
-              You earn every time your product changes hands — forever.
-            </p>
-            <p style={{ margin: "6px 0 0", color: "#355" }}>
-              This is quadratic royalty decay — borrowed from Ethereum governance. Early sales reward you most.
-              Later resales still pay you forever.
-            </p>
-          </div>
         </div>
       )}
 

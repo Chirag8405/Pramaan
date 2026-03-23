@@ -5,7 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
-import { getArtisan, transferProduct, verifyProduct } from "../../src/utils/contract";
+import {
+  approveEscrowForToken,
+  confirmEscrowReceived,
+  createEscrowSale,
+  getArtisan,
+  getEscrowDetails,
+  markEscrowShipped,
+  raiseEscrowDispute,
+  transferProduct,
+  verifyProduct,
+  cancelEscrowExpired
+} from "../../src/utils/contract";
 import { RPC_URL } from "../../src/utils/constants";
 import { appendEvidenceEntry } from "../../src/utils/evidence";
 
@@ -28,6 +39,15 @@ export default function TransferPage() {
 
   const [paymentEth, setPaymentEth] = useState("0.05");
   const [transferSuccess, setTransferSuccess] = useState(null);
+
+  const [escrowTokenId, setEscrowTokenId] = useState("");
+  const [escrowSeller, setEscrowSeller] = useState("");
+  const [escrowAmountEth, setEscrowAmountEth] = useState("0.05");
+  const [escrowId, setEscrowId] = useState("");
+  const [escrowDisputeReason, setEscrowDisputeReason] = useState("Buyer raised dispute");
+  const [escrowLoading, setEscrowLoading] = useState(false);
+  const [escrowStatusText, setEscrowStatusText] = useState("");
+  const [escrowData, setEscrowData] = useState(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -153,7 +173,9 @@ export default function TransferPage() {
 
     try {
       const artisan = await getArtisan(candidate);
-      setNewOwnerVerified(Boolean(artisan?.verified));
+      setNewOwnerVerified(
+        Boolean(artisan?.isAadhaarVerified) && !Boolean(artisan?.isFraudulent) && Number(artisan?.registeredAt || 0) > 0
+      );
     } catch (_error) {
       setNewOwnerVerified(false);
     }
@@ -213,6 +235,177 @@ export default function TransferPage() {
     }
   }
 
+  function getEscrowStatusLabel(status) {
+    const labels = {
+      0: "None",
+      1: "Created",
+      2: "Shipped",
+      3: "Completed",
+      4: "Refunded",
+      5: "Disputed",
+      6: "Resolved"
+    };
+    return labels[Number(status)] || "Unknown";
+  }
+
+  async function loadEscrow(idValue) {
+    const id = Number(idValue);
+    if (!Number.isFinite(id) || id <= 0) {
+      setEscrowStatusText("Provide a valid escrow ID.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    try {
+      const details = await getEscrowDetails(id);
+      setEscrowData(details);
+      setEscrowStatusText("Escrow details loaded.");
+    } catch (error) {
+      setEscrowData(null);
+      setEscrowStatusText(error?.shortMessage || error?.message || "Could not load escrow details.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
+  async function onCreateEscrow(event) {
+    event.preventDefault();
+
+    if (!escrowTokenId || !escrowSeller) {
+      setEscrowStatusText("Token ID and seller are required.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    setEscrowData(null);
+    setEscrowStatusText("Creating escrow and locking buyer funds...");
+
+    try {
+      const { receipt, escrowId: createdEscrowId } = await createEscrowSale(
+        Number(escrowTokenId),
+        escrowSeller,
+        escrowAmountEth
+      );
+
+      setEscrowId(String(createdEscrowId));
+      setEscrowStatusText(
+        "Escrow created (ID " +
+        createdEscrowId +
+        "). Seller must approve token to escrow contract and mark shipped."
+      );
+
+      await loadEscrow(createdEscrowId);
+
+      const txHash = receipt?.transactionHash || receipt?.hash || "";
+      if (txHash) {
+        setEscrowStatusText(
+          "Escrow created (ID " +
+          createdEscrowId +
+          "). Etherscan: https://sepolia.etherscan.io/tx/" +
+          txHash
+        );
+      }
+    } catch (error) {
+      setEscrowStatusText(error?.shortMessage || error?.message || "Escrow creation failed.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
+  async function onApproveTokenForEscrow() {
+    if (!escrowTokenId) {
+      setEscrowStatusText("Enter token ID to approve.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    setEscrowStatusText("Approving escrow contract for token transfer...");
+    try {
+      await approveEscrowForToken(Number(escrowTokenId));
+      setEscrowStatusText("Token approved for escrow contract.");
+    } catch (error) {
+      setEscrowStatusText(error?.shortMessage || error?.message || "Approval failed.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
+  async function onMarkShipped() {
+    if (!escrowId) {
+      setEscrowStatusText("Enter escrow ID.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    setEscrowStatusText("Marking escrow as shipped...");
+    try {
+      await markEscrowShipped(Number(escrowId));
+      await loadEscrow(escrowId);
+      setEscrowStatusText("Escrow marked as shipped.");
+    } catch (error) {
+      setEscrowStatusText(error?.shortMessage || error?.message || "Could not mark shipped.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
+  async function onConfirmEscrow() {
+    if (!escrowId) {
+      setEscrowStatusText("Enter escrow ID.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    setEscrowStatusText("Confirming delivery and releasing escrow funds...");
+    try {
+      await confirmEscrowReceived(Number(escrowId));
+      await loadEscrow(escrowId);
+      setEscrowStatusText("Escrow completed. Funds settled and NFT transferred.");
+    } catch (error) {
+      setEscrowStatusText(error?.shortMessage || error?.message || "Could not confirm receipt.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
+  async function onCancelEscrow() {
+    if (!escrowId) {
+      setEscrowStatusText("Enter escrow ID.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    setEscrowStatusText("Attempting escrow cancellation...");
+    try {
+      await cancelEscrowExpired(Number(escrowId));
+      await loadEscrow(escrowId);
+      setEscrowStatusText("Escrow cancelled and refunded.");
+    } catch (error) {
+      setEscrowStatusText(error?.shortMessage || error?.message || "Could not cancel escrow.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
+  async function onRaiseDispute() {
+    if (!escrowId) {
+      setEscrowStatusText("Enter escrow ID.");
+      return;
+    }
+
+    setEscrowLoading(true);
+    setEscrowStatusText("Raising escrow dispute...");
+    try {
+      await raiseEscrowDispute(Number(escrowId), escrowDisputeReason);
+      await loadEscrow(escrowId);
+      setEscrowStatusText("Dispute raised. Await arbitrator resolution.");
+    } catch (error) {
+      setEscrowStatusText(error?.shortMessage || error?.message || "Could not raise dispute.");
+    } finally {
+      setEscrowLoading(false);
+    }
+  }
+
   const currentOwner = recordState?.record ? getCurrentOwner(recordState.record) : "";
   const currentTerroir = Number(recordState?.terroir || 0);
   const currentTransferCount = Number(recordState?.record?.transferCount || 0);
@@ -239,15 +432,117 @@ export default function TransferPage() {
       <h1 style={{ margin: 0 }}>Transfer Product Ownership</h1>
       <p style={{ margin: 0, color: "#466" }}>Transfer ownership with quadratic royalty and terroir impact preview.</p>
 
+      <form onSubmit={onCreateEscrow} style={formStyle}>
+        <h3 style={{ marginTop: 0, marginBottom: 8 }}>Escrow Transfer (Recommended)</h3>
+        <p style={{ margin: "0 0 8px", color: "#466" }}>
+          Buyer creates escrow, seller marks shipped, buyer confirms delivery to release funds and transfer NFT.
+        </p>
+
+        <input
+          suppressHydrationWarning
+          required
+          type="number"
+          min="1"
+          value={escrowTokenId}
+          onChange={(e) => setEscrowTokenId(e.target.value)}
+          placeholder="NFT Token ID"
+          style={inputStyle}
+        />
+
+        <input
+          suppressHydrationWarning
+          required
+          value={escrowSeller}
+          onChange={(e) => setEscrowSeller(e.target.value)}
+          placeholder="Seller wallet (0x...)"
+          style={inputStyle}
+        />
+
+        <input
+          suppressHydrationWarning
+          required
+          type="number"
+          min="0.0001"
+          step="0.0001"
+          value={escrowAmountEth}
+          onChange={(e) => setEscrowAmountEth(e.target.value)}
+          placeholder="Escrow amount (ETH)"
+          style={inputStyle}
+        />
+
+        <button suppressHydrationWarning type="submit" disabled={escrowLoading} style={buttonStyle}>
+          {escrowLoading ? "Working..." : "Create Escrow"}
+        </button>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button suppressHydrationWarning type="button" disabled={escrowLoading} onClick={onApproveTokenForEscrow} style={buttonStyle}>
+            Approve Token for Escrow
+          </button>
+          <button suppressHydrationWarning type="button" disabled={escrowLoading} onClick={onMarkShipped} style={buttonStyle}>
+            Mark Shipped
+          </button>
+          <button suppressHydrationWarning type="button" disabled={escrowLoading} onClick={onConfirmEscrow} style={buttonStyle}>
+            Confirm Received
+          </button>
+          <button suppressHydrationWarning type="button" disabled={escrowLoading} onClick={onCancelEscrow} style={buttonStyle}>
+            Cancel Expired
+          </button>
+        </div>
+
+        <input
+          suppressHydrationWarning
+          value={escrowId}
+          onChange={(e) => setEscrowId(e.target.value)}
+          placeholder="Escrow ID"
+          style={inputStyle}
+        />
+
+        <button
+          suppressHydrationWarning
+          type="button"
+          disabled={escrowLoading || !escrowId}
+          onClick={() => loadEscrow(escrowId)}
+          style={buttonStyle}
+        >
+          Load Escrow
+        </button>
+
+        <input
+          suppressHydrationWarning
+          value={escrowDisputeReason}
+          onChange={(e) => setEscrowDisputeReason(e.target.value)}
+          placeholder="Dispute reason"
+          style={inputStyle}
+        />
+        <button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onRaiseDispute} style={buttonStyle}>
+          Raise Dispute
+        </button>
+
+        {escrowStatusText && <p style={{ margin: 0, color: "#355" }}>{escrowStatusText}</p>}
+
+        {escrowData && (
+          <div style={cardStyle}>
+            <p style={textStyle}>Escrow ID: {escrowData.id}</p>
+            <p style={textStyle}>Token ID: {escrowData.tokenId}</p>
+            <p style={textStyle}>Buyer: {truncateAddress(escrowData.buyer)}</p>
+            <p style={textStyle}>Seller: {truncateAddress(escrowData.seller)}</p>
+            <p style={textStyle}>Amount: {escrowData.salePriceEth} ETH</p>
+            <p style={textStyle}>Status: {getEscrowStatusLabel(escrowData.status)}</p>
+            {escrowData.disputeReason && <p style={textStyle}>Dispute: {escrowData.disputeReason}</p>}
+          </div>
+        )}
+      </form>
+
       <form onSubmit={(e) => { e.preventDefault(); loadProduct(hash); }} style={formStyle}>
         <input
+          suppressHydrationWarning
           required
           value={hash}
           onChange={(e) => setHash(e.target.value)}
           placeholder="Product hash (0x...)"
           style={inputStyle}
         />
-        <button type="submit" disabled={loading} style={buttonStyle}>Load Product</button>
+        <button suppressHydrationWarning type="submit" disabled={loading} style={buttonStyle}>Load Product</button>
       </form>
 
       {status && <p style={{ margin: 0, color: "#355" }}>{status}</p>}
@@ -266,6 +561,7 @@ export default function TransferPage() {
 
           <form onSubmit={onConfirmTransfer} style={formStyle}>
             <input
+              suppressHydrationWarning
               required
               value={newOwnerInput}
               onChange={(e) => {
@@ -280,6 +576,7 @@ export default function TransferPage() {
             {ensInfo && <p style={{ margin: 0, color: "#577" }}>{ensInfo}</p>}
 
             <input
+              suppressHydrationWarning
               required
               type="number"
               min="0.0001"
@@ -339,7 +636,7 @@ export default function TransferPage() {
               </div>
             )}
 
-            <button disabled={loading} type="submit" style={buttonStyle}>
+            <button suppressHydrationWarning disabled={loading} type="submit" style={buttonStyle}>
               {loading ? "Processing..." : "Confirm Transfer"}
             </button>
 
