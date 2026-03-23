@@ -207,3 +207,24 @@ export async function getArtisan(address) {
     args: [address]
   });
 }
+
+export async function getArtisanTokenId(address) {
+  assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
+
+  const tokenId = await readContract(config, {
+    address: ARTISAN_REGISTRY_ADDRESS,
+    abi: [
+      {
+        inputs: [{ internalType: "address", name: "", type: "address" }],
+        name: "artisanTokenId",
+        outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+        stateMutability: "view",
+        type: "function"
+      }
+    ],
+    functionName: "artisanTokenId",
+    args: [address]
+  });
+
+  return tokenId;
+}
