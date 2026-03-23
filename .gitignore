@@ -5,6 +5,7 @@
 .env
 .env.*
 !.env.example
+!**/.env.example
 
 # Logs and temp
 *.log
@@ -25,6 +26,15 @@ Thumbs.db
 dist/
 build/
 coverage/
+
+# Next.js frontend artifacts
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/.turbo/
+frontend/.eslintcache
+frontend/next-env.d.ts
+frontend/*.tsbuildinfo
 
 # Hardhat / Solidity artifacts (blockchain app)
 blockchain/artifacts/

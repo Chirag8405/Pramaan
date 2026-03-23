@@ -156,21 +156,27 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
   return waitForTransactionReceipt(config, { hash: txHash });
 }
 
-export async function transferProduct(hash, newOwnerAddress) {
+export async function transferProduct(hash, newOwnerAddress, saleValueEth) {
   assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 
   await connectWallet();
 
-  const { record } = await verifyProduct(hash);
-  const nextTransferCount = Number(record.transferCount) + 1;
-  const royaltyBps = calculateRoyaltyBps(nextTransferCount);
+  let totalValueWei;
 
-  // Back-calculate sale payment so royalty payout is at least target value.
-  const targetRoyaltyWei = parseEther(DEFAULT_TARGET_ROYALTY_ETH);
-  const totalValueWei =
-    royaltyBps > 0
-      ? (targetRoyaltyWei * 10000n + BigInt(royaltyBps) - 1n) / BigInt(royaltyBps)
-      : parseEther("0.01");
+  if (typeof saleValueEth !== "undefined" && saleValueEth !== null && String(saleValueEth).trim() !== "") {
+    totalValueWei = parseEther(String(saleValueEth));
+  } else {
+    const { record } = await verifyProduct(hash);
+    const nextTransferCount = Number(record.transferCount) + 1;
+    const royaltyBps = calculateRoyaltyBps(nextTransferCount);
+
+    // Back-calculate sale payment so royalty payout is at least target value.
+    const targetRoyaltyWei = parseEther(DEFAULT_TARGET_ROYALTY_ETH);
+    totalValueWei =
+      royaltyBps > 0
+        ? (targetRoyaltyWei * 10000n + BigInt(royaltyBps) - 1n) / BigInt(royaltyBps)
+        : parseEther("0.01");
+  }
 
   const txHash = await writeContract(config, {
     address: PRODUCT_REGISTRY_ADDRESS,

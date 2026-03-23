@@ -4,6 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,7 +15,10 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "next": "^14.2.33",
     "onnxruntime-web": "^1.24.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "viem": "^2.47.6",
     "wagmi": "^3.5.0",
     "web3.storage": "^4.5.5"
