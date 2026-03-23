@@ -247,6 +247,17 @@ export const PRODUCT_ABI = [
     anonymous: false,
     inputs: [
       { indexed: true, internalType: "bytes32", name: "productHash", type: "bytes32" },
+      { indexed: true, internalType: "bytes32", name: "metadataHash", type: "bytes32" },
+      { indexed: true, internalType: "address", name: "signer", type: "address" },
+      { indexed: false, internalType: "bytes", name: "deviceSignature", type: "bytes" }
+    ],
+    name: "ProductProvenanceSigned",
+    type: "event"
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "bytes32", name: "productHash", type: "bytes32" },
       { indexed: true, internalType: "address", name: "from", type: "address" },
       { indexed: true, internalType: "address", name: "to", type: "address" },
       { indexed: false, internalType: "uint256", name: "transferCount", type: "uint256" },
