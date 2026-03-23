@@ -4,9 +4,24 @@ const nextConfig = {
     config.resolve = config.resolve || {};
     config.resolve.alias = config.resolve.alias || {};
 
-    // MetaMask SDK references this react-native storage package on web builds.
-    // We do not use that code path in this app, so alias it out.
-    config.resolve.alias["@react-native-async-storage/async-storage"] = false;
+    // @wagmi/connectors lazily imports several optional SDKs.
+    // Alias each one to `false` so Webpack treats them as empty modules
+    // instead of failing the build. Also alias react-native-async-storage.
+    const optionalDeps = [
+      "porto",
+      "porto/internal",
+      "@base-org/account",
+      "@coinbase/wallet-sdk",
+      "@metamask/sdk",
+      "@safe-global/safe-apps-sdk",
+      "@safe-global/safe-apps-provider",
+      "@walletconnect/ethereum-provider",
+      "@react-native-async-storage/async-storage"
+    ];
+
+    for (const dep of optionalDeps) {
+      config.resolve.alias[dep] = false;
+    }
 
     return config;
   }
