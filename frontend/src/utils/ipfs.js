@@ -1,19 +1,26 @@
-import { Web3Storage } from "web3.storage";
-
-const WEB3STORAGE_TOKEN = process.env.NEXT_PUBLIC_WEB3STORAGE_TOKEN;
-
 export async function uploadToIPFS(file) {
   if (!file) {
     throw new Error("uploadToIPFS requires a file.");
   }
 
-  if (!WEB3STORAGE_TOKEN) {
-    throw new Error("Missing NEXT_PUBLIC_WEB3STORAGE_TOKEN environment variable.");
+  const body = new FormData();
+  body.append("file", file);
+
+  const response = await fetch("/api/ipfs/upload", {
+    method: "POST",
+    body
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "IPFS upload failed.");
   }
 
-  const client = new Web3Storage({ token: WEB3STORAGE_TOKEN });
-  const cid = await client.put([file], { wrapWithDirectory: false });
-  return cid;
+  if (!payload?.cid) {
+    throw new Error("Pinata upload succeeded but CID was missing.");
+  }
+
+  return payload.cid;
 }
 
 export function getIPFSUrl(cid) {
@@ -21,5 +28,6 @@ export function getIPFSUrl(cid) {
     throw new Error("getIPFSUrl requires a CID.");
   }
 
-  return "https://" + cid + ".ipfs.w3s.link";
+  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || "https://gateway.pinata.cloud";
+  return gateway.replace(/\/$/, "") + "/ipfs/" + cid;
 }

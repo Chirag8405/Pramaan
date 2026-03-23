@@ -1,18 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
-import {
-  checkpointScanNonce,
-  getArtisan,
-  getArtisanTokenId,
-  isScanNonceUsed,
-  verifyProduct
-} from "../../src/utils/contract";
-import { appendEvidenceEntry } from "../../src/utils/evidence";
+import { getArtisan, getArtisanTokenId, verifyProduct } from "../../src/utils/contract";
+import { getIPFSUrl } from "../../src/utils/ipfs";
 import { PRODUCT_REGISTRY_ADDRESS, RPC_URL } from "../../src/utils/constants";
 
 const PRODUCT_REGISTERED_EVENT = {
@@ -57,29 +51,7 @@ export default function VerifyPage() {
   const [status, setStatus] = useState("");
   const [resultType, setResultType] = useState(RESULT.NONE);
   const [resultData, setResultData] = useState(null);
-  const [scanNonce, setScanNonce] = useState("");
-  const [nonceUsed, setNonceUsed] = useState(null);
-  const [nonceStatus, setNonceStatus] = useState("");
   const [autoVerified, setAutoVerified] = useState(false);
-  const [demoRunning, setDemoRunning] = useState(false);
-  const [demoStep, setDemoStep] = useState(0);
-  const [demoScore, setDemoScore] = useState(97);
-  const [demoMessage, setDemoMessage] = useState("Click Run Terroir Attack Demo to show a judge-ready fake middleman simulation.");
-  const [demoWarning, setDemoWarning] = useState("");
-  const [demoHandlers, setDemoHandlers] = useState([]);
-
-  const demoRunIdRef = useRef(0);
-  const demoScoreRef = useRef(97);
-
-  useEffect(() => {
-    demoScoreRef.current = demoScore;
-  }, [demoScore]);
-
-  useEffect(() => {
-    return () => {
-      demoRunIdRef.current += 1;
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -88,33 +60,15 @@ export default function VerifyPage() {
 
     const params = new URLSearchParams(window.location.search);
     const hashFromUrl = params.get("hash") || "";
-    const nonceFromUrl = params.get("nonce") || "";
 
     if (!hashFromUrl || autoVerified) {
       return;
     }
 
     setHash(hashFromUrl);
-    setScanNonce(nonceFromUrl);
     setAutoVerified(true);
-    runVerification(hashFromUrl, nonceFromUrl);
+    runVerification(hashFromUrl);
   }, [autoVerified]);
-
-  async function refreshNonceState(targetHash, targetNonce) {
-    if (!targetHash || !targetNonce) {
-      setNonceUsed(null);
-      return;
-    }
-
-    try {
-      const used = await isScanNonceUsed(targetHash, targetNonce);
-      setNonceUsed(Boolean(used));
-      setNonceStatus(Boolean(used) ? "Replay detected for this nonce." : "Nonce unused. One-time scan available.");
-    } catch (_error) {
-      setNonceUsed(null);
-      setNonceStatus("Could not check nonce status.");
-    }
-  }
 
   function truncateAddress(address) {
     if (!address) {
@@ -144,119 +98,6 @@ export default function VerifyPage() {
     }
 
     return "Unknown Region";
-  }
-
-  function waitMs(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  async function animateScoreTo(targetScore, durationMs, runId) {
-    const startScore = demoScoreRef.current;
-    const endScore = Number(targetScore);
-
-    if (startScore === endScore) {
-      return;
-    }
-
-    await new Promise((resolve) => {
-      const startedAt = performance.now();
-
-      const tick = (now) => {
-        if (demoRunIdRef.current !== runId) {
-          resolve();
-          return;
-        }
-
-        const progress = Math.min(1, (now - startedAt) / durationMs);
-        const eased = 1 - Math.pow(1 - progress, 3);
-        const next = Math.round(startScore + (endScore - startScore) * eased);
-        setDemoScore(next);
-
-        if (progress < 1) {
-          requestAnimationFrame(tick);
-        } else {
-          setDemoScore(endScore);
-          resolve();
-        }
-      };
-
-      requestAnimationFrame(tick);
-    });
-  }
-
-  async function runTerroirAttackDemo() {
-    const runId = demoRunIdRef.current + 1;
-    demoRunIdRef.current = runId;
-
-    const baseVerified = [
-      { label: "Artisan (Ravi Kumar)", verified: true },
-      { label: "Verified Distributor", verified: true }
-    ];
-
-    setDemoRunning(true);
-    setDemoWarning("");
-
-    setDemoStep(1);
-    setDemoScore(97);
-    setDemoMessage("Step 1: First Flush Darjeeling starts with Terroir Score: 97.");
-    setDemoHandlers(baseVerified);
-    await waitMs(1500);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-
-    setDemoStep(2);
-    setDemoMessage("Step 2: Unverified middleman intercepts the supply chain...");
-    setDemoHandlers([...baseVerified, { label: "Middleman X", verified: false }]);
-    await animateScoreTo(82, 500, runId);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-    await animateScoreTo(67, 500, runId);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-    await animateScoreTo(52, 500, runId);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-
-    await waitMs(1500);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-
-    setDemoStep(3);
-    setDemoMessage("Step 3: Second unverified handler detected...");
-    setDemoHandlers([
-      ...baseVerified,
-      { label: "Middleman X", verified: false },
-      { label: "Broker Y", verified: false }
-    ]);
-    await animateScoreTo(37, 1500, runId);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-    setDemoWarning("COMPROMISED — Authenticity Cannot Be Guaranteed");
-
-    await waitMs(1500);
-    if (demoRunIdRef.current !== runId) {
-      return;
-    }
-
-    setDemoStep(4);
-    setDemoMessage("Step 4: Compare: same product through verified handlers only — Score: 94.");
-    setDemoWarning("");
-    setDemoHandlers([
-      { label: "Artisan (Ravi Kumar)", verified: true },
-      { label: "Verified Distributor", verified: true },
-      { label: "Verified Retailer", verified: true }
-    ]);
-    await animateScoreTo(94, 1500, runId);
-
-    if (demoRunIdRef.current === runId) {
-      setDemoRunning(false);
-    }
   }
 
   async function fetchProductEventMetadata(productHash) {
@@ -303,9 +144,8 @@ export default function VerifyPage() {
     return out;
   }
 
-  async function runVerification(inputHash, inputNonce = "") {
+  async function runVerification(inputHash) {
     const cleanHash = String(inputHash || "").trim();
-    const cleanNonce = String(inputNonce || scanNonce || "").trim();
     if (!cleanHash) {
       setStatus("Please enter a product hash.");
       return;
@@ -354,7 +194,6 @@ export default function VerifyPage() {
       setResultType(type);
       setResultData({
         hash: cleanHash,
-        nonce: cleanNonce,
         terroir,
         record,
         artisan,
@@ -365,17 +204,6 @@ export default function VerifyPage() {
         handlerChain,
         compromisedHandler
       });
-
-      if (eventMeta.registrationTxHash) {
-        appendEvidenceEntry({
-          action: "Verify",
-          productHash: cleanHash,
-          txUrl: "https://sepolia.etherscan.io/tx/" + eventMeta.registrationTxHash,
-          notes: "Verification lookup for product"
-        });
-      }
-
-      await refreshNonceState(cleanHash, cleanNonce);
       setStatus("Verification complete.");
     } catch (error) {
       const text = String(error?.shortMessage || error?.message || "").toLowerCase();
@@ -395,32 +223,7 @@ export default function VerifyPage() {
 
   async function onVerify(event) {
     event.preventDefault();
-    await runVerification(hash, scanNonce);
-  }
-
-  async function onCheckpointNonce() {
-    if (!resultData?.hash || !scanNonce) {
-      setNonceStatus("Enter a nonce to checkpoint.");
-      return;
-    }
-
-    setNonceStatus("Submitting nonce checkpoint on-chain...");
-    try {
-      const receipt = await checkpointScanNonce(resultData.hash, scanNonce);
-      const txHash = receipt?.transactionHash || receipt?.hash || "";
-      await refreshNonceState(resultData.hash, scanNonce);
-      if (txHash) {
-        appendEvidenceEntry({
-          action: "Nonce Checkpoint",
-          productHash: resultData.hash,
-          txUrl: "https://sepolia.etherscan.io/tx/" + txHash,
-          notes: "scan nonce " + scanNonce
-        });
-      }
-      setNonceStatus("Nonce checkpoint submitted.");
-    } catch (error) {
-      setNonceStatus(error?.shortMessage || error?.message || "Failed to checkpoint nonce.");
-    }
+    await runVerification(hash);
   }
 
   const resultHeader = useMemo(() => {
@@ -471,86 +274,10 @@ export default function VerifyPage() {
           placeholder="0x..."
           style={inputStyle}
         />
-        <input
-          value={scanNonce}
-          onChange={(e) => setScanNonce(e.target.value)}
-          placeholder="Scan nonce (optional, 0x...)"
-          style={inputStyle}
-        />
         <button disabled={loading} type="submit" style={buttonStyle}>
           {loading ? "Verifying..." : "Verify Product"}
         </button>
       </form>
-
-      <div style={{ ...cardStyle, background: "#f7fbff", borderColor: "#cfe0f2" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-          <h3 style={{ margin: 0, color: "#214a68" }}>Fake Middleman Attack Demo</h3>
-          <button disabled={demoRunning} type="button" onClick={runTerroirAttackDemo} style={buttonStyle}>
-            {demoRunning ? "Running Demo..." : "Run Terroir Attack Demo"}
-          </button>
-        </div>
-
-        <p style={{ margin: "10px 0 0", color: "#355", fontWeight: 600 }}>Product: First Flush Darjeeling</p>
-
-        <div
-          style={{
-            marginTop: 10,
-            border: "1px solid #cfe0f2",
-            borderRadius: 12,
-            background: "white",
-            padding: 12,
-            display: "grid",
-            gap: 10
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 13, color: "#577" }}>Terroir Score</div>
-            <div
-              style={{
-                fontSize: 38,
-                lineHeight: 1,
-                fontWeight: 800,
-                color: demoScore >= 80 ? "#1b7d55" : demoScore >= 50 ? "#9a6a12" : "#a02929",
-                transition: "color 280ms ease, transform 280ms ease",
-                transform: demoRunning ? "scale(1.04)" : "scale(1)"
-              }}
-            >
-              {demoScore}
-            </div>
-            <div style={{ color: "#577", fontSize: 13 }}>Step {demoStep || 0}/4</div>
-          </div>
-
-          <p style={{ margin: 0, color: "#355" }}>{demoMessage}</p>
-
-          {demoWarning && (
-            <div style={{ border: "1px solid #e3bbbb", background: "#fff0f0", color: "#8a1f1f", borderRadius: 8, padding: "8px 10px", fontWeight: 700 }}>
-              {demoWarning}
-            </div>
-          )}
-
-          <div style={{ display: "grid", gap: 8 }}>
-            {demoHandlers.map((handler, index) => (
-              <div key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #dce8ef", borderRadius: 8, padding: "8px 10px", background: "#fbfeff" }}>
-                <div style={{ color: "#2e4e60", fontWeight: 600 }}>{handler.label}</div>
-                <span
-                  style={{
-                    borderRadius: 999,
-                    padding: "2px 8px",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    border: "1px solid " + (handler.verified ? "#9ed7bf" : "#e5b0b0"),
-                    color: handler.verified ? "#1a6f50" : "#8a1f1f",
-                    background: handler.verified ? "#def4e9" : "#ffe2e2",
-                    transition: "all 320ms ease"
-                  }}
-                >
-                  {handler.verified ? "Verified" : "Unverified"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
       {status && <p style={{ margin: 0, color: "#355" }}>{status}</p>}
 
@@ -616,11 +343,6 @@ export default function VerifyPage() {
             <p style={textStyle}>Craft Type: {resultData.artisan?.craft || "Unknown"}</p>
             <p style={textStyle}>SBT Token ID: {resultData.sbtId}</p>
             <p style={textStyle}>Registered: {formatDate(resultData.record.registeredAt)}</p>
-            <p style={textStyle}>Provenance Signer: {truncateAddress(resultData.record.provenanceSigner)}</p>
-            <p style={textStyle}>Metadata Hash: {resultData.record.metadataHash}</p>
-            <p style={textStyle}>
-              Device Signature: {resultData.record.deviceSignature ? "Present" : "Not provided"}
-            </p>
             <p style={textStyle}>
               Origin GPS: {resultData.regionLabel} ({(Number(resultData.record.origin_lat) / 1000000).toFixed(6)},
               {(Number(resultData.record.origin_lng) / 1000000).toFixed(6)})
@@ -628,7 +350,7 @@ export default function VerifyPage() {
             <p style={textStyle}>
               IPFS Image:{" "}
               <a
-                href={"https://" + resultData.record.ipfsCid + ".ipfs.w3s.link"}
+                href={getIPFSUrl(resultData.record.ipfsCid)}
                 target="_blank"
                 rel="noreferrer"
                 style={linkStyle}
@@ -705,23 +427,6 @@ export default function VerifyPage() {
             <Link href={"/transfer?hash=" + resultData.hash} style={linkButtonStyle}>
               Go to Transfer Demo
             </Link>
-          </div>
-
-          <div style={cardStyle}>
-            <h3 style={{ marginTop: 0 }}>Anti-Clone Nonce Checkpoint</h3>
-            <p style={{ margin: 0, color: "#466" }}>
-              One-time nonce scan can be checkpointed on-chain. Replayed scans are flagged suspicious.
-            </p>
-            <p style={textStyle}>Nonce: {scanNonce || "-"}</p>
-            {nonceUsed !== null && (
-              <p style={{ ...textStyle, color: nonceUsed ? "#8a1f1f" : "#1a6f50", fontWeight: 700 }}>
-                {nonceUsed ? "Replayed scan detected" : "Nonce available"}
-              </p>
-            )}
-            {nonceStatus && <p style={textStyle}>{nonceStatus}</p>}
-            <button type="button" style={buttonStyle} onClick={onCheckpointNonce}>
-              Checkpoint Scan Nonce
-            </button>
           </div>
         </>
       )}
