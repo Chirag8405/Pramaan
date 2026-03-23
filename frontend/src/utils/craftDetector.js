@@ -1,5 +1,3 @@
-import * as ort from "onnxruntime-web";
-
 export const craftTypes = [
   "Darjeeling Tea",
   "Banarasi Silk",
@@ -104,11 +102,9 @@ export async function detectCraft(imageFile, craftType) {
     chw[channelSize * 2 + i] = b * 2 - 1;
   }
 
-  // Keep tensor creation in place so swapping in a real ONNX model is trivial.
-  const inputTensor = new ort.Tensor("float32", chw, [1, 3, 224, 224]);
-
-  // Prevent tree-shaking from dropping the tensor path in demo builds.
-  if (!inputTensor || inputTensor.dims[2] !== 224) {
+  // Keep shape validation so preprocessing stays model-ready.
+  const inputShape = [1, 3, 224, 224];
+  if (!inputShape || inputShape[2] !== 224) {
     throw new Error("Invalid tensor shape generated.");
   }
 

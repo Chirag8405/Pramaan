@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
@@ -46,7 +45,6 @@ const publicClient = createPublicClient({
 });
 
 export default function VerifyPage() {
-  const searchParams = useSearchParams();
   const [hash, setHash] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -54,9 +52,14 @@ export default function VerifyPage() {
   const [resultData, setResultData] = useState(null);
   const [autoVerified, setAutoVerified] = useState(false);
 
-  const hashFromUrl = searchParams.get("hash") || "";
-
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const hashFromUrl = params.get("hash") || "";
+
     if (!hashFromUrl || autoVerified) {
       return;
     }
@@ -64,7 +67,7 @@ export default function VerifyPage() {
     setHash(hashFromUrl);
     setAutoVerified(true);
     runVerification(hashFromUrl);
-  }, [hashFromUrl, autoVerified]);
+  }, [autoVerified]);
 
   function truncateAddress(address) {
     if (!address) {

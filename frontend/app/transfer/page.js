@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
@@ -15,8 +14,6 @@ const publicClient = createPublicClient({
 });
 
 export default function TransferPage() {
-  const searchParams = useSearchParams();
-
   const [hash, setHash] = useState("");
   const [recordState, setRecordState] = useState(null);
   const [status, setStatus] = useState("");
@@ -31,16 +28,21 @@ export default function TransferPage() {
   const [paymentEth, setPaymentEth] = useState("0.05");
   const [transferSuccess, setTransferSuccess] = useState(null);
 
-  const hashFromUrl = searchParams.get("hash") || "";
-
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const hashFromUrl = params.get("hash") || "";
+
     if (!hashFromUrl) {
       return;
     }
 
     setHash(hashFromUrl);
     loadProduct(hashFromUrl);
-  }, [hashFromUrl]);
+  }, []);
 
   function truncateAddress(address) {
     if (!address) {
