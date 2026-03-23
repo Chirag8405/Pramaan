@@ -63,16 +63,6 @@ function main() {
   const localNextDir = path.join(cwd, ".next");
   const localRoutes = path.join(localNextDir, "routes-manifest.json");
   ensureManifestsInDir(localNextDir, localRoutes);
-
-  // Vercel monorepo builds may package from the parent project root and look
-  // for manifests under /vercel/path0/.next even when build runs in frontend/.
-  const shouldMirrorToParent = process.env.VERCEL === "1" || process.env.CI === "true";
-  if (!shouldMirrorToParent) {
-    return;
-  }
-
-  const parentNextDir = path.resolve(cwd, "..", ".next");
-  ensureManifestsInDir(parentNextDir, localRoutes);
 }
 
 main();
