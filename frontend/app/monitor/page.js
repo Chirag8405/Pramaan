@@ -3,14 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, formatEther, http, webSocket } from "viem";
 import { sepolia } from "viem/chains";
-import { PRODUCT_ABI } from "../../src/utils/abi";
+import { PRODUCT_ABI, PRODUCT_NFT_ABI } from "../../src/utils/abi";
 import {
   DYNAMIC_ROYALTY_ADDRESS,
   ESCROW_MARKETPLACE_ADDRESS,
+  PRODUCT_NFT_ADDRESS,
   PRODUCT_REGISTRY_ADDRESS,
   RPC_URL,
   WS_RPC_URL
 } from "../../src/utils/constants";
+
+const HISTORY_BLOCK_SPAN = 25000n;
 
 const ESCROW_EVENTS_ABI = [
   {
@@ -100,6 +103,7 @@ export default function MonitorPage() {
   const [status, setStatus] = useState("Connecting to live event stream...");
   const [feeds, setFeeds] = useState([]);
   const unsubRef = useRef([]);
+  const eventIdsRef = useRef(new Set());
 
   const wsClient = useMemo(() => {
     return createPublicClient({
@@ -122,8 +126,9 @@ export default function MonitorPage() {
       const hasProductFeed = Boolean(PRODUCT_REGISTRY_ADDRESS && PRODUCT_REGISTRY_ADDRESS !== "PASTE_ADDRESS_HERE");
       const hasEscrowFeed = Boolean(ESCROW_MARKETPLACE_ADDRESS && ESCROW_MARKETPLACE_ADDRESS !== "PASTE_ADDRESS_HERE");
       const hasRoyaltyFeed = Boolean(DYNAMIC_ROYALTY_ADDRESS && DYNAMIC_ROYALTY_ADDRESS !== "PASTE_ADDRESS_HERE");
+      const hasNftFeed = Boolean(PRODUCT_NFT_ADDRESS && PRODUCT_NFT_ADDRESS !== "PASTE_ADDRESS_HERE");
 
-      if (!hasProductFeed && !hasEscrowFeed && !hasRoyaltyFeed) {
+      if (!hasProductFeed && !hasEscrowFeed && !hasRoyaltyFeed && !hasNftFeed) {
         setStatus("No contract addresses configured for monitoring.");
         return;
       }
@@ -132,6 +137,10 @@ export default function MonitorPage() {
         if (!mounted) {
           return;
         }
+        if (!item?.id || eventIdsRef.current.has(item.id)) {
+          return;
+        }
+        eventIdsRef.current.add(item.id);
         setEvents((prev) => {
           const next = [item, ...prev];
           return next.slice(0, 120);
@@ -148,11 +157,90 @@ export default function MonitorPage() {
         };
       };
 
+      const backfillLogs = async ({ address, abi, eventName, mapLog }) => {
+        const latestBlock = await httpClient.getBlockNumber();
+        const fromBlock = latestBlock > HISTORY_BLOCK_SPAN ? latestBlock - HISTORY_BLOCK_SPAN : 0n;
+        const eventDescriptor = abi.find((item) => item.type === "event" && item.name === eventName);
+
+        if (!eventDescriptor) {
+          return;
+        }
+
+        const logs = await httpClient.getLogs({
+          address,
+          event: eventDescriptor,
+          fromBlock,
+          toBlock: "latest"
+        });
+
+        for (const log of logs) {
+          const payload = mapLog(log);
+          const item = await withBlockTimestamp(log, payload);
+          pushEvent(item);
+        }
+      };
+
       try {
         const activeFeeds = [];
         const unwatchFns = [];
 
         if (hasProductFeed) {
+          await backfillLogs({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            eventName: "ProductRegistered",
+            mapLog: (log) => ({
+              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":reg",
+              type: "ProductRegistered",
+              source: "ProductRegistry",
+              hash: log.args.productHash
+            })
+          });
+
+          await backfillLogs({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            eventName: "ProductProvenanceSigned",
+            mapLog: (log) => ({
+              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":prov",
+              type: "ProductProvenanceSigned",
+              source: "ProductRegistry",
+              hash: log.args.productHash,
+              metadataHash: log.args.metadataHash,
+              signer: log.args.signer
+            })
+          });
+
+          await backfillLogs({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            eventName: "ProductTransferred",
+            mapLog: (log) => ({
+              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":xfer",
+              type: "ProductTransferred",
+              source: "ProductRegistry",
+              hash: log.args.productHash,
+              from: log.args.from,
+              to: log.args.to,
+              count: Number(log.args.transferCount)
+            })
+          });
+
+          await backfillLogs({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            eventName: "ProductScanCheckpoint",
+            mapLog: (log) => ({
+              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":scan",
+              type: "ProductScanCheckpoint",
+              source: "ProductRegistry",
+              hash: log.args.productHash,
+              nonce: log.args.nonce,
+              scanner: log.args.scanner,
+              replayed: Boolean(log.args.replayed)
+            })
+          });
+
           const unwatchRegistered = wsClient.watchContractEvent({
             address: PRODUCT_REGISTRY_ADDRESS,
             abi: PRODUCT_ABI,
@@ -196,8 +284,94 @@ export default function MonitorPage() {
             }
           });
 
-          unwatchFns.push(unwatchRegistered, unwatchTransferred);
+          const unwatchProvenance = wsClient.watchContractEvent({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            eventName: "ProductProvenanceSigned",
+            onLogs: async (logs) => {
+              for (const log of logs) {
+                const item = await withBlockTimestamp(log, {
+                  id: String(log.transactionHash) + ":" + String(log.logIndex) + ":prov",
+                  type: "ProductProvenanceSigned",
+                  source: "ProductRegistry",
+                  hash: log.args.productHash,
+                  metadataHash: log.args.metadataHash,
+                  signer: log.args.signer
+                });
+                pushEvent(item);
+              }
+            },
+            onError: () => {
+              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+            }
+          });
+
+          const unwatchScanCheckpoint = wsClient.watchContractEvent({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            eventName: "ProductScanCheckpoint",
+            onLogs: async (logs) => {
+              for (const log of logs) {
+                const item = await withBlockTimestamp(log, {
+                  id: String(log.transactionHash) + ":" + String(log.logIndex) + ":scan",
+                  type: "ProductScanCheckpoint",
+                  source: "ProductRegistry",
+                  hash: log.args.productHash,
+                  nonce: log.args.nonce,
+                  scanner: log.args.scanner,
+                  replayed: Boolean(log.args.replayed)
+                });
+                pushEvent(item);
+              }
+            },
+            onError: () => {
+              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+            }
+          });
+
+          unwatchFns.push(unwatchRegistered, unwatchTransferred, unwatchProvenance, unwatchScanCheckpoint);
           activeFeeds.push("ProductRegistry");
+        }
+
+        if (hasNftFeed) {
+          await backfillLogs({
+            address: PRODUCT_NFT_ADDRESS,
+            abi: PRODUCT_NFT_ABI,
+            eventName: "ProductMinted",
+            mapLog: (log) => ({
+              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":mint",
+              type: "ProductMinted",
+              source: "ProductNFT",
+              tokenId: Number(log.args.tokenId),
+              artisan: log.args.artisan,
+              to: log.args.recipient
+            })
+          });
+
+          const unwatchMinted = wsClient.watchContractEvent({
+            address: PRODUCT_NFT_ADDRESS,
+            abi: PRODUCT_NFT_ABI,
+            eventName: "ProductMinted",
+            onLogs: async (logs) => {
+              for (const log of logs) {
+                const item = await withBlockTimestamp(log, {
+                  id: String(log.transactionHash) + ":" + String(log.logIndex) + ":mint",
+                  type: "ProductMinted",
+                  source: "ProductNFT",
+                  tokenId: Number(log.args.tokenId),
+                  artisan: log.args.artisan,
+                  to: log.args.recipient
+                });
+                pushEvent(item);
+              }
+            },
+            onError: () => {
+              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+            }
+          });
+
+          unwatchFns.push(unwatchMinted);
+          activeFeeds.push("ProductNFT");
         }
 
         if (hasEscrowFeed) {
@@ -209,6 +383,64 @@ export default function MonitorPage() {
             "EscrowDisputed",
             "EscrowResolved"
           ];
+
+          for (const eventName of escrowEventNames) {
+            await backfillLogs({
+              address: ESCROW_MARKETPLACE_ADDRESS,
+              abi: ESCROW_EVENTS_ABI,
+              eventName,
+              mapLog: (log) => {
+                const args = log.args || {};
+                const base = {
+                  id: String(log.transactionHash) + ":" + String(log.logIndex) + ":" + eventName,
+                  type: eventName,
+                  source: "EscrowMarketplace"
+                };
+
+                if (eventName === "EscrowCreated") {
+                  Object.assign(base, {
+                    escrowId: Number(args.escrowId),
+                    tokenId: Number(args.tokenId),
+                    buyer: args.buyer,
+                    seller: args.seller,
+                    salePriceEth: formatEther(args.salePrice || 0n)
+                  });
+                } else if (eventName === "EscrowShipped") {
+                  Object.assign(base, {
+                    escrowId: Number(args.escrowId),
+                    confirmDeadline: Number(args.confirmDeadline)
+                  });
+                } else if (eventName === "EscrowCompleted") {
+                  Object.assign(base, {
+                    escrowId: Number(args.escrowId),
+                    tokenId: Number(args.tokenId),
+                    artisanAmountEth: formatEther(args.artisanAmount || 0n),
+                    sellerAmountEth: formatEther(args.sellerAmount || 0n)
+                  });
+                } else if (eventName === "EscrowRefunded") {
+                  Object.assign(base, {
+                    escrowId: Number(args.escrowId),
+                    buyer: args.buyer,
+                    refundEth: formatEther(args.amount || 0n)
+                  });
+                } else if (eventName === "EscrowDisputed") {
+                  Object.assign(base, {
+                    escrowId: Number(args.escrowId),
+                    raisedBy: args.raisedBy,
+                    reason: args.reason
+                  });
+                } else if (eventName === "EscrowResolved") {
+                  Object.assign(base, {
+                    escrowId: Number(args.escrowId),
+                    sellerWins: Boolean(args.sellerWins),
+                    resolution: args.resolution
+                  });
+                }
+
+                return base;
+              }
+            });
+          }
 
           for (const eventName of escrowEventNames) {
             const unwatchEscrowEvent = wsClient.watchContractEvent({
@@ -280,6 +512,27 @@ export default function MonitorPage() {
         }
 
         if (hasRoyaltyFeed) {
+          await backfillLogs({
+            address: DYNAMIC_ROYALTY_ADDRESS,
+            abi: ROYALTY_EVENTS_ABI,
+            eventName: "RoyaltySettled",
+            mapLog: (log) => {
+              const args = log.args || {};
+              return {
+                id: String(log.transactionHash) + ":" + String(log.logIndex) + ":RoyaltySettled",
+                type: "RoyaltySettled",
+                source: "DynamicRoyalty",
+                tokenId: Number(args.tokenId),
+                transferId: Number(args.transferId),
+                seller: args.seller,
+                artisan: args.artisan,
+                salePriceEth: formatEther(args.salePrice || 0n),
+                artisanAmountEth: formatEther(args.artisanAmount || 0n),
+                sellerAmountEth: formatEther(args.sellerAmount || 0n)
+              };
+            }
+          });
+
           const unwatchRoyalty = wsClient.watchContractEvent({
             address: DYNAMIC_ROYALTY_ADDRESS,
             abi: ROYALTY_EVENTS_ABI,
@@ -366,8 +619,15 @@ export default function MonitorPage() {
             {event.seller && <div style={monoText}>Seller: {event.seller}</div>}
             {event.raisedBy && <div style={monoText}>Raised By: {event.raisedBy}</div>}
             {event.artisan && <div style={monoText}>Artisan: {event.artisan}</div>}
+            {event.signer && <div style={monoText}>Signer: {event.signer}</div>}
+            {event.scanner && <div style={monoText}>Scanner: {event.scanner}</div>}
+            {event.metadataHash && <div style={monoText}>Metadata Hash: {event.metadataHash}</div>}
+            {event.nonce && <div style={monoText}>Nonce: {event.nonce}</div>}
             {typeof event.count === "number" && <div style={{ color: "#355" }}>Transfer Count: {event.count}</div>}
             {typeof event.transferId === "number" && <div style={{ color: "#355" }}>Transfer ID: {event.transferId}</div>}
+            {typeof event.replayed === "boolean" && (
+              <div style={{ color: "#355" }}>Replay: {event.replayed ? "Detected" : "Fresh nonce"}</div>
+            )}
             {event.salePriceEth && <div style={{ color: "#355" }}>Sale Price: {event.salePriceEth} ETH</div>}
             {event.refundEth && <div style={{ color: "#355" }}>Refund: {event.refundEth} ETH</div>}
             {event.artisanAmountEth && <div style={{ color: "#355" }}>Artisan Amount: {event.artisanAmountEth} ETH</div>}
