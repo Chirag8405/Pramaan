@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import TerritorScore from "../../components/TerritorScore";
 import { getArtisan, getArtisanTokenId, verifyProduct } from "../../src/utils/contract";
 import { getIPFSUrl } from "../../src/utils/ipfs";
@@ -262,124 +266,167 @@ export default function VerifyPage() {
   }, [resultType, resultData]);
 
   return (
-    <section style={{ display: "grid", gap: 16 }}>
-      <h1 style={{ margin: 0 }}>Verify Product</h1>
-      <p style={{ margin: 0, color: "#466" }}>Enter a product hash to verify authenticity and custody trail.</p>
+    <section className="grid gap-6">
+      <div className="grid gap-2">
+        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Verify Product</h1>
+        <p className="m-0 text-[#49665e]">Enter a product hash to verify authenticity and custody trail.</p>
+      </div>
 
-      <form onSubmit={onVerify} style={formStyle}>
-        <input
-          suppressHydrationWarning
-          required
-          value={hash}
-          onChange={(e) => setHash(e.target.value)}
-          placeholder="0x..."
-          style={inputStyle}
-        />
-        <button suppressHydrationWarning disabled={loading} type="submit" style={buttonStyle}>
-          {loading ? "Verifying..." : "Verify Product"}
-        </button>
-      </form>
+      <Card className="max-w-3xl">
+        <CardContent className="pt-6">
+          <form onSubmit={onVerify} className="grid gap-3">
+            <Input
+              suppressHydrationWarning
+              required
+              value={hash}
+              onChange={(e) => setHash(e.target.value)}
+              placeholder="0x..."
+            />
+            <Button suppressHydrationWarning disabled={loading} type="submit" className="w-fit">
+              {loading ? "Verifying..." : "Verify Product"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-      {status && <p style={{ margin: 0, color: "#355" }}>{status}</p>}
+      {status && <p className="m-0 text-[#355]">{status}</p>}
 
       {resultType === RESULT.NOT_FOUND && (
-        <div style={{ ...cardStyle, borderColor: "#e7d8d8", background: "#fff7f7" }}>
-          <p style={{ margin: 0, color: "#8a1f1f", fontWeight: 700 }}>
-            This product has never been registered on Pramaan.
-          </p>
-        </div>
+        <Card className="max-w-3xl border-[#e7d8d8] bg-[#fff7f7]">
+          <CardContent className="pt-6">
+            <p className="m-0 font-semibold text-[#8a1f1f]">
+              This product has never been registered on Pramaan.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {resultData && resultHeader && (
         <>
-          <div style={{ ...cardStyle, background: resultHeader.bg, borderColor: resultHeader.color }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: "50%",
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 30,
-                  fontWeight: 800,
-                  color: "white",
-                  background: resultHeader.color
-                }}
-              >
-                {resultHeader.icon}
+          <Card className="max-w-4xl" style={{ background: resultHeader.bg, borderColor: resultHeader.color }}>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 30,
+                    fontWeight: 800,
+                    color: "white",
+                    background: resultHeader.color
+                  }}
+                >
+                  {resultHeader.icon}
+                </div>
+                <h2 className="m-0 text-2xl font-bold" style={{ color: resultHeader.color }}>{resultHeader.title}</h2>
               </div>
-              <h2 style={{ margin: 0, color: resultHeader.color }}>{resultHeader.title}</h2>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div style={{ maxWidth: 420 }}>
+          <div className="max-w-4xl">
             <TerritorScore score={resultData.terroir} />
           </div>
 
           {resultType === RESULT.CAUTION && (
-            <div style={{ ...cardStyle, background: "#fff8e8", borderColor: "#e3c89a" }}>
-              <p style={{ margin: 0, color: "#8a5b09", fontWeight: 700 }}>
-                {resultData.unverifiedCount} unverified handlers detected in supply chain.
-              </p>
-            </div>
+            <Card className="max-w-4xl border-[#e3c89a] bg-[#fff8e8]">
+              <CardContent className="pt-6">
+                <p className="m-0 font-semibold text-[#8a5b09]">
+                  {resultData.unverifiedCount} unverified handlers detected in supply chain.
+                </p>
+              </CardContent>
+            </Card>
           )}
 
           {resultType === RESULT.COMPROMISED && (
-            <div style={{ ...cardStyle, background: "#fff0f0", borderColor: "#e1b5b5" }}>
-              <p style={{ margin: 0, color: "#8a1f1f", fontWeight: 700 }}>
-                {resultData.compromisedHandler
-                  ? "Score dropped due to unverified handler: " + truncateAddress(resultData.compromisedHandler.wallet)
-                  : "Score dropped due to unverified custody events."}
-              </p>
-            </div>
+            <Card className="max-w-4xl border-[#e1b5b5] bg-[#fff0f0]">
+              <CardContent className="pt-6">
+                <p className="m-0 font-semibold text-[#8a1f1f]">
+                  {resultData.compromisedHandler
+                    ? "Score dropped due to unverified handler: " + truncateAddress(resultData.compromisedHandler.wallet)
+                    : "Score dropped due to unverified custody events."}
+                </p>
+              </CardContent>
+            </Card>
           )}
 
-          <div style={cardStyle}>
-            <h3 style={{ marginTop: 0 }}>Product Record</h3>
-            <p style={textStyle}>
-              Product: {resultData.record.productName} ({resultData.record.giTag})
-            </p>
-            <p style={textStyle}>Artisan: {resultData.artisan?.name || "Unknown"}</p>
-            <p style={textStyle}>Craft Type: {resultData.artisan?.craft || "Unknown"}</p>
-            <p style={textStyle}>SBT Token ID: {resultData.sbtId}</p>
-            <p style={textStyle}>Registered: {formatDate(resultData.record.registeredAt)}</p>
-            <p style={textStyle}>
-              Origin GPS: {resultData.regionLabel} ({(Number(resultData.record.origin_lat) / 1000000).toFixed(6)},
-              {(Number(resultData.record.origin_lng) / 1000000).toFixed(6)})
-            </p>
-            <p style={textStyle}>
-              IPFS Image:{" "}
-              <a
-                href={getIPFSUrl(resultData.record.ipfsCid)}
-                target="_blank"
-                rel="noreferrer"
-                style={linkStyle}
-              >
-                Open original image
-              </a>
-            </p>
-            {resultData.registrationTxHash && (
-              <p style={textStyle}>
-                Registration Tx:{" "}
+          <Card className="max-w-4xl">
+            <CardHeader className="pb-2">
+              <CardTitle>Product Record</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product</p>
+                <p className="m-0 text-lg font-semibold text-[#20473d]">
+                  {resultData.record.productName} ({resultData.record.giTag})
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Artisan</p>
+                <p className="m-0 text-base font-medium text-[#20473d]">{resultData.artisan?.name || "Unknown"}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Craft Type</p>
+                <p className="m-0 text-base font-medium text-[#20473d]">{resultData.artisan?.craft || "Unknown"}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">SBT Token ID</p>
+                <p className="m-0 text-base font-semibold text-[#20473d]">{resultData.sbtId}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Registered At</p>
+                <p className="m-0 text-base font-medium text-[#20473d]">{formatDate(resultData.record.registeredAt)}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Origin GPS</p>
+                <p className="m-0 text-base font-medium text-[#20473d]">
+                  {resultData.regionLabel} ({(Number(resultData.record.origin_lat) / 1000000).toFixed(6)}, {(Number(resultData.record.origin_lng) / 1000000).toFixed(6)})
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">IPFS Image</p>
                 <a
-                  href={"https://sepolia.etherscan.io/tx/" + resultData.registrationTxHash}
+                  href={getIPFSUrl(resultData.record.ipfsCid)}
                   target="_blank"
                   rel="noreferrer"
-                  style={linkStyle}
+                  className="font-semibold text-[#176f52] no-underline"
                 >
-                  View on Etherscan
+                  Open original image
                 </a>
-              </p>
-            )}
-          </div>
+              </div>
 
-          <div style={cardStyle}>
-            <h3 style={{ marginTop: 0 }}>Full Handler Chain</h3>
-            <div style={{ display: "grid", gap: 12 }}>
+              {resultData.registrationTxHash && (
+                <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
+                  <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Registration Tx</p>
+                  <a
+                    href={"https://sepolia.etherscan.io/tx/" + resultData.registrationTxHash}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-[#176f52] no-underline"
+                  >
+                    View on Etherscan
+                  </a>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="max-w-4xl">
+            <CardHeader className="pb-2">
+              <CardTitle>Full Handler Chain</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
               {resultData.handlerChain.map((node, index) => (
-                <div key={index} style={{ display: "grid", gridTemplateColumns: "24px 1fr", gap: 10 }}>
-                  <div style={{ display: "grid", justifyItems: "center" }}>
+                <div key={index} className="grid grid-cols-[24px_1fr] gap-3">
+                  <div className="grid justify-items-center">
                     <div
                       style={{
                         width: 12,
@@ -393,102 +440,36 @@ export default function VerifyPage() {
                       <div style={{ width: 2, height: 36, background: "#d5e6e0", marginTop: 2 }} />
                     )}
                   </div>
-                  <div style={{ background: "#f8fcfb", border: "1px solid #dcebe5", borderRadius: 10, padding: 10 }}>
-                    <div style={{ fontWeight: 700, color: "#284f46" }}>{node.label}</div>
-                    <div style={{ color: "#466", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                  <div className="rounded-xl border border-[#dcebe5] bg-[#f8fcfb] p-3">
+                    <div className="font-semibold text-[#284f46]">{node.label}</div>
+                    <div className="font-mono text-[#466]">
                       {truncateAddress(node.wallet)}
                     </div>
-                    <div style={{ color: "#577" }}>{node.timestamp ? formatDate(node.timestamp) : "Timestamp unavailable"}</div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        display: "inline-block",
-                        borderRadius: 999,
-                        padding: "2px 8px",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        background: node.verified ? "#def4e9" : "#ffe2e2",
-                        color: node.verified ? "#1a6f50" : "#8a1f1f",
-                        border: "1px solid " + (node.verified ? "#9ed7bf" : "#e5b0b0")
-                      }}
-                    >
-                      {node.verified ? "Verified" : "Unverified"}
+                    <div className="text-[#577]">{node.timestamp ? formatDate(node.timestamp) : "Timestamp unavailable"}</div>
+                    <div className="mt-1">
+                      <Badge variant={node.verified ? "default" : "warm"}>{node.verified ? "Verified" : "Unverified"}</Badge>
                     </div>
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div style={cardStyle}>
-            <h3 style={{ marginTop: 0 }}>Terroir Score Demo</h3>
-            <p style={{ margin: 0, color: "#466" }}>
-              Transfer this product through an unverified wallet to see the score drop.
-            </p>
-            <Link href={"/transfer?hash=" + resultData.hash} style={linkButtonStyle}>
-              Go to Transfer Demo
-            </Link>
-          </div>
+          <Card className="max-w-4xl">
+            <CardHeader className="pb-2">
+              <CardTitle>Terroir Score Demo</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 text-[#466]">
+              <p className="m-0">
+                Transfer this product through an unverified wallet to see the score drop.
+              </p>
+              <Link href={"/transfer?hash=" + resultData.hash} className="w-fit no-underline">
+                <Button>Go to Transfer Demo</Button>
+              </Link>
+            </CardContent>
+          </Card>
         </>
       )}
     </section>
   );
 }
-
-const formStyle = {
-  display: "grid",
-  gap: 10,
-  maxWidth: 680,
-  background: "#fff",
-  border: "1px solid #d9ebe4",
-  borderRadius: 12,
-  padding: 14
-};
-
-const inputStyle = {
-  border: "1px solid #cfe2db",
-  borderRadius: 8,
-  padding: "10px 12px",
-  fontSize: 14
-};
-
-const buttonStyle = {
-  background: "#1D9E75",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  padding: "10px 14px",
-  fontWeight: 700,
-  cursor: "pointer",
-  width: "fit-content"
-};
-
-const textStyle = { margin: "4px 0", color: "#355" };
-
-const cardStyle = {
-  background: "#fff",
-  border: "1px solid #d9ebe4",
-  borderRadius: 12,
-  padding: 14,
-  maxWidth: 760
-};
-
-const linkStyle = {
-  color: "#176f52",
-  fontWeight: 700,
-  textDecoration: "none"
-};
-
-const linkButtonStyle = {
-  marginTop: 10,
-  background: "#1D9E75",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  padding: "10px 14px",
-  fontWeight: 700,
-  cursor: "pointer",
-  width: "fit-content",
-  textDecoration: "none",
-  display: "inline-block"
-};
