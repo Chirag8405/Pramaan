@@ -23,6 +23,15 @@ export default function ArtisanPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(null);
+  const [projectedPriceEth, setProjectedPriceEth] = useState(0.1);
+
+  const projectedRoyaltyRows = [
+    { transfer: 1, percent: 40 },
+    { transfer: 2, percent: 28 },
+    { transfer: 3, percent: 23 },
+    { transfer: 5, percent: 18 },
+    { transfer: 10, percent: 13 }
+  ];
 
   async function onConnect() {
     try {
@@ -80,6 +89,11 @@ export default function ArtisanPage() {
       color: "#8a1f1f",
       text: "Craft signature not detected — registration blocked"
     };
+  }
+
+  function formatEth(value) {
+    const normalized = Number(value || 0);
+    return normalized.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") || "0";
   }
 
   async function runCraftAnalysis(file, selectedCraft) {
@@ -370,6 +384,66 @@ export default function ArtisanPage() {
               View on Etherscan
             </a>
           )}
+
+          <div
+            style={{
+              marginTop: 14,
+              background: "#ffffff",
+              border: "1px solid #b9dfcf",
+              borderRadius: 10,
+              padding: "12px 12px 14px"
+            }}
+          >
+            <h3 style={{ margin: "0 0 10px", color: "#184f3e" }}>Your Projected Earnings</h3>
+
+            <label style={{ display: "grid", gap: 8, marginBottom: 12, color: "#355", fontWeight: 600 }}>
+              Set your product price (ETH)
+              <input
+                type="range"
+                min="0.01"
+                max="2"
+                step="0.01"
+                value={projectedPriceEth}
+                onChange={(event) => setProjectedPriceEth(Number(event.target.value))}
+                style={{ width: "100%" }}
+              />
+              <span style={{ fontWeight: 700, color: "#1b5f49" }}>{formatEth(projectedPriceEth)} ETH</span>
+            </label>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ background: "#eff8f4", color: "#274f45" }}>
+                    <th style={{ textAlign: "left", padding: "8px", border: "1px solid #d7ebe2" }}>Transfer</th>
+                    <th style={{ textAlign: "left", padding: "8px", border: "1px solid #d7ebe2" }}>Royalty</th>
+                    <th style={{ textAlign: "left", padding: "8px", border: "1px solid #d7ebe2" }}>Projected Earnings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectedRoyaltyRows.map((row) => {
+                    const payout = (projectedPriceEth * row.percent) / 100;
+                    return (
+                      <tr key={row.transfer}>
+                        <td style={{ padding: "8px", border: "1px solid #e1efe9", color: "#355" }}>Transfer {row.transfer}</td>
+                        <td style={{ padding: "8px", border: "1px solid #e1efe9", color: "#355" }}>{row.percent}% royalty</td>
+                        <td style={{ padding: "8px", border: "1px solid #e1efe9", color: "#1f6d50", fontWeight: 700 }}>
+                          At Transfer {row.transfer}: you receive {formatEth(payout)} ETH of a {formatEth(projectedPriceEth)} ETH sale
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <p style={{ margin: "10px 0 0", color: "#355", fontWeight: 600 }}>
+              You earn every time your product changes hands — forever.
+            </p>
+            <p style={{ margin: "6px 0 0", color: "#355" }}>
+              This is quadratic royalty decay — borrowed from Ethereum governance. Early sales reward you most.
+              Later resales still pay you forever.
+            </p>
+          </div>
         </div>
       )}
 
