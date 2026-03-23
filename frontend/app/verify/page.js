@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
 import TerritorScore from "../../components/TerritorScore";
@@ -51,6 +51,25 @@ export default function VerifyPage() {
   const [resultType, setResultType] = useState(RESULT.NONE);
   const [resultData, setResultData] = useState(null);
   const [autoVerified, setAutoVerified] = useState(false);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoStep, setDemoStep] = useState(0);
+  const [demoScore, setDemoScore] = useState(97);
+  const [demoMessage, setDemoMessage] = useState("Click Run Terroir Attack Demo to show a judge-ready fake middleman simulation.");
+  const [demoWarning, setDemoWarning] = useState("");
+  const [demoHandlers, setDemoHandlers] = useState([]);
+
+  const demoRunIdRef = useRef(0);
+  const demoScoreRef = useRef(97);
+
+  useEffect(() => {
+    demoScoreRef.current = demoScore;
+  }, [demoScore]);
+
+  useEffect(() => {
+    return () => {
+      demoRunIdRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -97,6 +116,119 @@ export default function VerifyPage() {
     }
 
     return "Unknown Region";
+  }
+
+  function waitMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function animateScoreTo(targetScore, durationMs, runId) {
+    const startScore = demoScoreRef.current;
+    const endScore = Number(targetScore);
+
+    if (startScore === endScore) {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      const startedAt = performance.now();
+
+      const tick = (now) => {
+        if (demoRunIdRef.current !== runId) {
+          resolve();
+          return;
+        }
+
+        const progress = Math.min(1, (now - startedAt) / durationMs);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const next = Math.round(startScore + (endScore - startScore) * eased);
+        setDemoScore(next);
+
+        if (progress < 1) {
+          requestAnimationFrame(tick);
+        } else {
+          setDemoScore(endScore);
+          resolve();
+        }
+      };
+
+      requestAnimationFrame(tick);
+    });
+  }
+
+  async function runTerroirAttackDemo() {
+    const runId = demoRunIdRef.current + 1;
+    demoRunIdRef.current = runId;
+
+    const baseVerified = [
+      { label: "Artisan (Ravi Kumar)", verified: true },
+      { label: "Verified Distributor", verified: true }
+    ];
+
+    setDemoRunning(true);
+    setDemoWarning("");
+
+    setDemoStep(1);
+    setDemoScore(97);
+    setDemoMessage("Step 1: First Flush Darjeeling starts with Terroir Score: 97.");
+    setDemoHandlers(baseVerified);
+    await waitMs(1500);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+
+    setDemoStep(2);
+    setDemoMessage("Step 2: Unverified middleman intercepts the supply chain...");
+    setDemoHandlers([...baseVerified, { label: "Middleman X", verified: false }]);
+    await animateScoreTo(82, 500, runId);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+    await animateScoreTo(67, 500, runId);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+    await animateScoreTo(52, 500, runId);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+
+    await waitMs(1500);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+
+    setDemoStep(3);
+    setDemoMessage("Step 3: Second unverified handler detected...");
+    setDemoHandlers([
+      ...baseVerified,
+      { label: "Middleman X", verified: false },
+      { label: "Broker Y", verified: false }
+    ]);
+    await animateScoreTo(37, 1500, runId);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+    setDemoWarning("COMPROMISED — Authenticity Cannot Be Guaranteed");
+
+    await waitMs(1500);
+    if (demoRunIdRef.current !== runId) {
+      return;
+    }
+
+    setDemoStep(4);
+    setDemoMessage("Step 4: Compare: same product through verified handlers only — Score: 94.");
+    setDemoWarning("");
+    setDemoHandlers([
+      { label: "Artisan (Ravi Kumar)", verified: true },
+      { label: "Verified Distributor", verified: true },
+      { label: "Verified Retailer", verified: true }
+    ]);
+    await animateScoreTo(94, 1500, runId);
+
+    if (demoRunIdRef.current === runId) {
+      setDemoRunning(false);
+    }
   }
 
   async function fetchProductEventMetadata(productHash) {
@@ -277,6 +409,76 @@ export default function VerifyPage() {
           {loading ? "Verifying..." : "Verify Product"}
         </button>
       </form>
+
+      <div style={{ ...cardStyle, background: "#f7fbff", borderColor: "#cfe0f2" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+          <h3 style={{ margin: 0, color: "#214a68" }}>Fake Middleman Attack Demo</h3>
+          <button disabled={demoRunning} type="button" onClick={runTerroirAttackDemo} style={buttonStyle}>
+            {demoRunning ? "Running Demo..." : "Run Terroir Attack Demo"}
+          </button>
+        </div>
+
+        <p style={{ margin: "10px 0 0", color: "#355", fontWeight: 600 }}>Product: First Flush Darjeeling</p>
+
+        <div
+          style={{
+            marginTop: 10,
+            border: "1px solid #cfe0f2",
+            borderRadius: 12,
+            background: "white",
+            padding: 12,
+            display: "grid",
+            gap: 10
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 13, color: "#577" }}>Terroir Score</div>
+            <div
+              style={{
+                fontSize: 38,
+                lineHeight: 1,
+                fontWeight: 800,
+                color: demoScore >= 80 ? "#1b7d55" : demoScore >= 50 ? "#9a6a12" : "#a02929",
+                transition: "color 280ms ease, transform 280ms ease",
+                transform: demoRunning ? "scale(1.04)" : "scale(1)"
+              }}
+            >
+              {demoScore}
+            </div>
+            <div style={{ color: "#577", fontSize: 13 }}>Step {demoStep || 0}/4</div>
+          </div>
+
+          <p style={{ margin: 0, color: "#355" }}>{demoMessage}</p>
+
+          {demoWarning && (
+            <div style={{ border: "1px solid #e3bbbb", background: "#fff0f0", color: "#8a1f1f", borderRadius: 8, padding: "8px 10px", fontWeight: 700 }}>
+              {demoWarning}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {demoHandlers.map((handler, index) => (
+              <div key={index} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #dce8ef", borderRadius: 8, padding: "8px 10px", background: "#fbfeff" }}>
+                <div style={{ color: "#2e4e60", fontWeight: 600 }}>{handler.label}</div>
+                <span
+                  style={{
+                    borderRadius: 999,
+                    padding: "2px 8px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: "1px solid " + (handler.verified ? "#9ed7bf" : "#e5b0b0"),
+                    color: handler.verified ? "#1a6f50" : "#8a1f1f",
+                    background: handler.verified ? "#def4e9" : "#ffe2e2",
+                    transition: "all 320ms ease"
+                  }}
+                >
+                  {handler.verified ? "Verified" : "Unverified"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {status && <p style={{ margin: 0, color: "#355" }}>{status}</p>}
 
