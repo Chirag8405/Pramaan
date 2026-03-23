@@ -1,5 +1,6 @@
 const PLACEHOLDER_ADDRESS = "PASTE_ADDRESS_HERE";
 const PLACEHOLDER_RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY";
+const PLACEHOLDER_WS_RPC_URL = "wss://eth-sepolia.g.alchemy.com/v2/YOUR_KEY";
 
 function normalizeEnv(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -8,6 +9,19 @@ function normalizeEnv(value) {
 function envOrFallback(value, fallback) {
     const normalized = normalizeEnv(value);
     return normalized || fallback;
+}
+
+function toWsUrl(url) {
+    if (!url) {
+        return "";
+    }
+    if (url.startsWith("https://")) {
+        return "wss://" + url.slice("https://".length);
+    }
+    if (url.startsWith("http://")) {
+        return "ws://" + url.slice("http://".length);
+    }
+    return url;
 }
 
 export const ARTISAN_REGISTRY_ADDRESS = envOrFallback(
@@ -37,3 +51,7 @@ export const ESCROW_MARKETPLACE_ADDRESS = envOrFallback(
 
 export const CHAIN_ID = Number(envOrFallback(process.env.NEXT_PUBLIC_CHAIN_ID, "11155111"));
 export const RPC_URL = envOrFallback(process.env.NEXT_PUBLIC_RPC_URL, PLACEHOLDER_RPC_URL);
+export const WS_RPC_URL = envOrFallback(
+    process.env.NEXT_PUBLIC_WS_RPC_URL,
+    toWsUrl(RPC_URL) || PLACEHOLDER_WS_RPC_URL
+);

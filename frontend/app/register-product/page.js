@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import TerritorScore from "../../components/TerritorScore";
 import { giRegions } from "../../src/utils/craftDetector";
@@ -9,6 +10,7 @@ import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
 
 export default function RegisterProductPage() {
+  const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [walletAddress, setWalletAddress] = useState("");
   const [isVerified, setIsVerified] = useState(false);
@@ -149,6 +151,11 @@ export default function RegisterProductPage() {
     return hash.slice(0, 10) + "..." + hash.slice(-6);
   }
 
+  function isAlreadyRegisteredError(error) {
+    const text = String(error?.shortMessage || error?.message || "").toLowerCase();
+    return text.includes("product already registered");
+  }
+
   async function onSubmit(event) {
     event.preventDefault();
 
@@ -201,7 +208,14 @@ export default function RegisterProductPage() {
 
       setStatusText("Product registered successfully.");
     } catch (error) {
-      setStatusText(error?.shortMessage || error?.message || "Product registration failed.");
+      if (isAlreadyRegisteredError(error)) {
+        const verifyUrl = "/verify?hash=" + productHash;
+        setStatusText("Product already registered. Redirecting to verification page...");
+        setStepProgress("Opening existing record...");
+        router.push(verifyUrl);
+      } else {
+        setStatusText(error?.shortMessage || error?.message || "Product registration failed.");
+      }
     } finally {
       setLoading(false);
       setStepProgress("");

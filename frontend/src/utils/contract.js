@@ -11,7 +11,7 @@ import {
 } from "@wagmi/core";
 import { injected } from "@wagmi/connectors";
 import { sepolia } from "wagmi/chains";
-import { formatEther, parseEther } from "viem";
+import { encodeFunctionData, formatEther, parseEther, toHex } from "viem";
 
 import {
     ARTISAN_ABI,
@@ -32,6 +32,25 @@ import {
 
 const SEPOLIA_HEX_CHAIN_ID = "0xaa36a7";
 const DEFAULT_TARGET_ROYALTY_ETH = "0.001";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const ZERO_HASH = "0x" + "00".repeat(32);
+
+const LEGACY_PRODUCT_REGISTER_ABI = [
+    {
+        inputs: [
+            { internalType: "bytes32", name: "hash", type: "bytes32" },
+            { internalType: "string", name: "cid", type: "string" },
+            { internalType: "string", name: "name", type: "string" },
+            { internalType: "string", name: "giTag", type: "string" },
+            { internalType: "uint256", name: "lat", type: "uint256" },
+            { internalType: "uint256", name: "lng", type: "uint256" }
+        ],
+        name: "registerProduct",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function"
+    }
+];
 
 const injectedConnector = injected({ shimDisconnect: true });
 
@@ -123,18 +142,187 @@ function calculateRoyaltyBps(transferCount) {
     return Math.floor(4000 / root);
 }
 
+let registerProductVariantCache = null;
+
+async function detectRegisterProductVariant() {
+    if (registerProductVariantCache) {
+        return registerProductVariantCache;
+    }
+
+    ensureBrowserWallet();
+
+    const runtimeCode = await window.ethereum.request({
+        method: "eth_getCode",
+        params: [PRODUCT_REGISTRY_ADDRESS, "latest"]
+    });
+
+    const code = String(runtimeCode || "").toLowerCase();
+    if (!code || code === "0x") {
+        throw new Error("ProductRegistry is not deployed at configured address.");
+    }
+
+    const currentSelector = encodeFunctionData({
+        abi: PRODUCT_ABI,
+        functionName: "registerProduct",
+        args: [ZERO_HASH, "", "", "", ZERO_HASH, ZERO_ADDRESS, "0x", 0n, 0n]
+    })
+        .slice(2, 10)
+        .toLowerCase();
+
+    const legacySelector = encodeFunctionData({
+        abi: LEGACY_PRODUCT_REGISTER_ABI,
+        functionName: "registerProduct",
+        args: [ZERO_HASH, "", "", "", 0n, 0n]
+    })
+        .slice(2, 10)
+        .toLowerCase();
+
+    if (code.includes(currentSelector)) {
+        registerProductVariantCache = "current";
+        return registerProductVariantCache;
+    }
+
+    if (code.includes(legacySelector)) {
+        registerProductVariantCache = "legacy";
+        return registerProductVariantCache;
+    }
+
+    registerProductVariantCache = "current";
+    return registerProductVariantCache;
+}
+
+function extractRevertReason(error) {
+    const candidates = [
+        error?.shortMessage,
+        error?.details,
+        error?.message,
+        error?.cause?.shortMessage,
+        error?.cause?.details,
+        error?.cause?.message,
+        error?.data?.message,
+        error?.error?.message
+    ].filter(Boolean);
+
+    for (const value of candidates) {
+        const text = String(value);
+        if (text.toLowerCase().includes("execution reverted")) {
+            const match = text.match(/execution reverted:?\s*([^\n]+)/i);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+        }
+        if (text.includes("Only verified artisans")) {
+            return "Only verified artisans";
+        }
+        if (text.includes("Product already registered")) {
+            return "Product already registered";
+        }
+        if (text.includes("Invalid metadata hash")) {
+            return "Invalid metadata hash";
+        }
+        if (text.includes("Invalid signer")) {
+            return "Invalid signer";
+        }
+    }
+
+    return candidates[0] ? String(candidates[0]) : "Unknown error";
+}
+
+async function getProductRegistryArtisanRegistryAddress() {
+    return readContract(config, {
+        address: PRODUCT_REGISTRY_ADDRESS,
+        abi: [
+            {
+                inputs: [],
+                name: "artisanRegistry",
+                outputs: [{ internalType: "address", name: "", type: "address" }],
+                stateMutability: "view",
+                type: "function"
+            }
+        ],
+        functionName: "artisanRegistry"
+    });
+}
+
+async function isVerifiedForProductRegistry(address) {
+    const linkedArtisanRegistry = await getProductRegistryArtisanRegistryAddress();
+    return readContract(config, {
+        address: linkedArtisanRegistry,
+        abi: ARTISAN_ABI,
+        functionName: "isVerifiedArtisan",
+        args: [address]
+    });
+}
+
+async function isProductHashAlreadyRegistered(hash) {
+    try {
+        await readContract(config, {
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: PRODUCT_ABI,
+            functionName: "verifyProduct",
+            args: [hash]
+        });
+        return true;
+    } catch (_error) {
+        return false;
+    }
+}
+
+async function writeWithEstimatedGas({ address, abi, functionName, args = [], value, from }) {
+    ensureBrowserWallet();
+
+    const sender = from || (await getConnectedAddress());
+    const data = encodeFunctionData({ abi, functionName, args });
+
+    const estimatePayload = {
+        from: sender,
+        to: address,
+        data
+    };
+
+    if (typeof value !== "undefined") {
+        estimatePayload.value = toHex(value);
+    }
+
+    // Preflight execution with the exact same sender/payload to surface revert reason early.
+    try {
+        await window.ethereum.request({
+            method: "eth_call",
+            params: [estimatePayload, "latest"]
+        });
+    } catch (callError) {
+        throw new Error(extractRevertReason(callError));
+    }
+
+    const estimatedGasHex = await window.ethereum.request({
+        method: "eth_estimateGas",
+        params: [estimatePayload]
+    });
+
+    const estimatedGas = BigInt(estimatedGasHex);
+    const gasWithBuffer = (estimatedGas * 12n) / 10n;
+
+    return writeContract(config, {
+        account: sender,
+        address,
+        abi,
+        functionName,
+        args,
+        value,
+        gas: gasWithBuffer
+    });
+}
+
 export async function registerArtisan(name, craft, giRegion, craftScore) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
 
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ARTISAN_REGISTRY_ADDRESS,
         abi: ARTISAN_ABI,
         functionName: "registerArtisan",
-        args: [name, craft, giRegion, Number(craftScore)],
-        // Keep gas safely below common RPC caps (prevents wallet defaulting to 21,000,000).
-        gas: 900000n
+        args: [name, craft, giRegion, Number(craftScore)]
     });
 
     return waitForTransactionReceipt(config, { hash: txHash });
@@ -187,7 +375,7 @@ export async function markAadhaarVerified(artisanAddress) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ARTISAN_REGISTRY_ADDRESS,
         abi: ARTISAN_ABI,
         functionName: "markAadhaarVerified",
@@ -201,7 +389,7 @@ export async function vouchFor(candidateAddress, stake) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ARTISAN_REGISTRY_ADDRESS,
         abi: ARTISAN_ABI,
         functionName: "vouchFor",
@@ -215,7 +403,7 @@ export async function releaseVouches(candidateAddress) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ARTISAN_REGISTRY_ADDRESS,
         abi: ARTISAN_ABI,
         functionName: "releaseVouches",
@@ -229,7 +417,7 @@ export async function slashFraud(candidateAddress) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ARTISAN_REGISTRY_ADDRESS,
         abi: ARTISAN_ABI,
         functionName: "slash",
@@ -260,7 +448,7 @@ export async function mintProductTwin(recipient, tokenUri, terroirScore, provena
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: PRODUCT_NFT_ADDRESS,
         abi: PRODUCT_NFT_ABI,
         functionName: "mintProduct",
@@ -275,7 +463,7 @@ export async function approveEscrowForToken(tokenId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: PRODUCT_NFT_ADDRESS,
         abi: [
             {
@@ -300,7 +488,7 @@ export async function createEscrowSale(tokenId, sellerAddress, saleValueEth) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "createEscrow",
@@ -325,7 +513,7 @@ export async function markEscrowShipped(escrowId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "markShipped",
@@ -339,7 +527,7 @@ export async function confirmEscrowReceived(escrowId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "confirmReceived",
@@ -353,7 +541,7 @@ export async function cancelEscrowExpired(escrowId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "cancelExpired",
@@ -367,7 +555,7 @@ export async function raiseEscrowDispute(escrowId, reason) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "raiseDispute",
@@ -430,7 +618,7 @@ export async function executeSecondarySale(tokenId, sellerAddress, saleValueEth)
     assertConfiguredAddress(DYNAMIC_ROYALTY_ADDRESS, "DYNAMIC_ROYALTY_ADDRESS");
     await connectWallet();
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: DYNAMIC_ROYALTY_ADDRESS,
         abi: DYNAMIC_ROYALTY_ABI,
         functionName: "processSecondarySale",
@@ -447,19 +635,64 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng) {
     assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 
     const artisanAddress = await getConnectedAddress();
-    const verified = await isVerifiedArtisan(artisanAddress);
+    const verified = Boolean(await isVerifiedForProductRegistry(artisanAddress));
     if (!verified) {
-        throw new Error("Only verified artisans can register products.");
+        throw new Error("Only verified artisans can register products on this ProductRegistry deployment.");
     }
 
-    const txHash = await writeContract(config, {
-        address: PRODUCT_REGISTRY_ADDRESS,
-        abi: PRODUCT_ABI,
-        functionName: "registerProduct",
-        args: [hash, cid, name, giTag, BigInt(lat), BigInt(lng)]
-    });
+    if (!/^0x[0-9a-fA-F]{64}$/.test(String(hash || ""))) {
+        throw new Error("Invalid product hash. Expected bytes32 hex string.");
+    }
 
-    return waitForTransactionReceipt(config, { hash: txHash });
+    const latitude = BigInt(lat);
+    const longitude = BigInt(lng);
+    if (latitude < 0n || longitude < 0n) {
+        throw new Error("Latitude and longitude must be positive scaled integers.");
+    }
+
+    const alreadyRegistered = await isProductHashAlreadyRegistered(hash);
+    if (alreadyRegistered) {
+        throw new Error("Product already registered. Use a new image/hash.");
+    }
+
+    const metadataHash = hash;
+    const provenanceSigner = artisanAddress;
+    const deviceSignature = "0x";
+
+    const currentArgs = [
+        hash,
+        cid,
+        name,
+        giTag,
+        metadataHash,
+        provenanceSigner,
+        deviceSignature,
+        latitude,
+        longitude
+    ];
+
+    const legacyArgs = [hash, cid, name, giTag, latitude, longitude];
+
+    try {
+        const registerProductVariant = await detectRegisterProductVariant();
+        const selectedAbi = registerProductVariant === "legacy" ? LEGACY_PRODUCT_REGISTER_ABI : PRODUCT_ABI;
+        const selectedArgs = registerProductVariant === "legacy" ? legacyArgs : currentArgs;
+
+        const txHash = await writeWithEstimatedGas({
+            address: PRODUCT_REGISTRY_ADDRESS,
+            abi: selectedAbi,
+            functionName: "registerProduct",
+            args: selectedArgs,
+            from: artisanAddress
+        });
+
+        return waitForTransactionReceipt(config, { hash: txHash });
+    } catch (error) {
+        const detail = extractRevertReason(error);
+        throw new Error(
+            "Validation Error: " + detail
+        );
+    }
 }
 
 export async function transferProduct(hash, newOwnerAddress, saleValueEth) {
@@ -483,7 +716,7 @@ export async function transferProduct(hash, newOwnerAddress, saleValueEth) {
                 : parseEther("0.01");
     }
 
-    const txHash = await writeContract(config, {
+    const txHash = await writeWithEstimatedGas({
         address: PRODUCT_REGISTRY_ADDRESS,
         abi: PRODUCT_ABI,
         functionName: "transferProduct",
