@@ -33,6 +33,7 @@ const publicClient = createPublicClient({
 });
 
 const DEMO_BUYER_ADDRESS = "0x71C0000000000000000000000000000000000000";
+const ESCROW_ONLY_MODE = true;
 
 export default function TransferPage() {
   const [hash, setHash] = useState("");
@@ -87,6 +88,33 @@ export default function TransferPage() {
       resolveOwnerInput(newOwnerInput);
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncNftOwnerFromToken() {
+      if (!escrowTokenId || !/^\d+$/.test(String(escrowTokenId)) || Number(escrowTokenId) <= 0) {
+        return;
+      }
+
+      try {
+        const owner = await getProductNftOwner(Number(escrowTokenId));
+        if (!cancelled) {
+          setNftOwnerLive(owner);
+        }
+      } catch (_error) {
+        if (!cancelled) {
+          setNftOwnerLive("");
+        }
+      }
+    }
+
+    syncNftOwnerFromToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [escrowTokenId]);
 
   function truncateAddress(address) {
     if (!address) {
@@ -447,6 +475,9 @@ export default function TransferPage() {
     if (lower.includes("escrow contract not approved for token")) {
       return "Confirm failed: seller must approve NFT to escrow contract and mark shipped again.";
     }
+    if (lower.includes("approve caller is not token owner") || lower.includes("not token owner or approved for all")) {
+      return "Mark shipped failed: connect the seller wallet that owns this NFT token, then try again.";
+    }
     if (lower.includes("seller no longer owner")) {
       return "Confirm failed: seller no longer owns this NFT token.";
     }
@@ -502,7 +533,7 @@ export default function TransferPage() {
       return;
     }
 
-    const derivedSeller = currentOwner || escrowSeller;
+    let derivedSeller = currentOwner || escrowSeller;
     if (!derivedSeller || !String(derivedSeller).startsWith("0x") || String(derivedSeller).length !== 42) {
       setEscrowStatusText("Load product first so seller wallet can be derived automatically.");
       return;
@@ -516,10 +547,11 @@ export default function TransferPage() {
     try {
       const ownerOnNft = await getProductNftOwner(Number(escrowTokenId));
       if (String(ownerOnNft).toLowerCase() !== String(derivedSeller).toLowerCase()) {
+        derivedSeller = ownerOnNft;
+        setEscrowSeller(ownerOnNft);
         setEscrowStatusText(
-          "Escrow failed: seller wallet must match current NFT owner " + truncateAddress(ownerOnNft) + "."
+          "Seller wallet auto-corrected to NFT owner " + truncateAddress(ownerOnNft) + ". Continue creating escrow..."
         );
-        return;
       }
     } catch (error) {
       const raw = extractReadableError(error, "Invalid token ID.");
@@ -709,15 +741,35 @@ export default function TransferPage() {
     setEscrowLoading(true);
     setEscrowStatusText("Approving token and marking escrow as shipped...");
     try {
-      try {
-        await getProductNftOwner(Number(escrowTokenId));
-      } catch (error) {
-        const raw = extractReadableError(error, "Invalid token ID.");
-        setEscrowStatusText(mapEscrowError(raw, "Could not mark shipped."));
+      const details = await getEscrowDetails(Number(escrowId));
+      const tokenIdForEscrow = Number(details?.tokenId || 0);
+      const escrowSeller = String(details?.seller || "");
+      const connected = (await getConnectedAddress()).toLowerCase();
+
+      if (!tokenIdForEscrow) {
+        setEscrowStatusText("Could not resolve token ID from escrow details.");
         return;
       }
 
-      await approveEscrowForToken(Number(escrowTokenId));
+      if (connected !== escrowSeller.toLowerCase()) {
+        setEscrowStatusText(
+          "Mark shipped failed: switch to seller wallet " + truncateAddress(escrowSeller) + "."
+        );
+        return;
+      }
+
+      const owner = await getProductNftOwner(tokenIdForEscrow);
+      if (String(owner).toLowerCase() !== connected) {
+        setEscrowStatusText(
+          "Mark shipped failed: connected wallet is not NFT owner " + truncateAddress(owner) + "."
+        );
+        return;
+      }
+
+      setEscrowTokenId(String(tokenIdForEscrow));
+      setEscrowSeller(escrowSeller);
+
+      await approveEscrowForToken(tokenIdForEscrow);
       await markEscrowShipped(Number(escrowId));
       await loadEscrow(escrowId);
       setEscrowStep(3);
@@ -808,10 +860,23 @@ export default function TransferPage() {
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Transfer Product Ownership</h1>
-        <p className="m-0 text-[#49665e]">Transfer ownership with quadratic royalty and terroir impact preview.</p>
+        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Escrow Product Transfer</h1>
+        <p className="m-0 text-[#49665e]">Escrow-only flow: buyer creates escrow, seller marks shipped, buyer confirms delivery.</p>
         <p className="m-0 text-sm text-[#577]">Network: Sepolia. Amount fields use Sepolia ETH (testnet), not mainnet ETH.</p>
       </div>
+
+      <Card className="max-w-4xl border-[#dbe9e3] bg-[#f7fcfa]">
+        <CardHeader className="pb-2">
+          <CardTitle>Escrow Role Guide</CardTitle>
+          <CardDescription>Use only these roles for this page.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2 text-[#355]">
+          <p className="m-0">1. Buyer wallet: create escrow (must be different from NFT owner).</p>
+          <p className="m-0">2. Seller wallet: mark shipped (must be NFT owner).</p>
+          <p className="m-0">3. Buyer wallet: confirm received.</p>
+          <p className="m-0 text-sm text-[#577]">Provenance owner and NFT owner can differ. Escrow always uses NFT owner as seller.</p>
+        </CardContent>
+      </Card>
 
       <Card className="max-w-4xl">
         <CardHeader className="pb-2">
@@ -866,7 +931,8 @@ export default function TransferPage() {
             />
 
             <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 text-sm text-[#466]">
-              <p className="m-0">Seller wallet (auto): {truncateAddress(currentOwner || escrowSeller)}</p>
+              <p className="m-0">Provenance owner (this hash): {truncateAddress(currentOwner || escrowSeller)}</p>
+              <p className="m-0 mt-1">NFT owner (this token): {truncateAddress(nftOwnerLive)}</p>
               {escrowId && <p className="m-0 mt-1">Escrow ID (auto): {escrowId}</p>}
             </div>
 
@@ -970,117 +1036,119 @@ export default function TransferPage() {
             </CardContent>
           </Card>
 
-          <Card className="max-w-4xl">
-            <CardHeader className="pb-2">
-              <CardTitle>Direct Transfer and Royalty Preview</CardTitle>
-              <CardDescription>Use ENS or wallet address, then confirm transfer with projected impact.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={onConfirmTransfer} className="grid gap-3">
-                <Input
-                  suppressHydrationWarning
-                  required
-                  value={newOwnerInput}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setNewOwnerInput(value);
-                    resolveOwnerInput(value);
-                  }}
-                  placeholder="New owner wallet address or ENS"
-                />
-
-                {ensInfo && <p className="m-0 text-[#577]">{ensInfo}</p>}
-
-                <Input
-                  suppressHydrationWarning
-                  required
-                  type="number"
-                  min="0.0001"
-                  step="0.0001"
-                  value={paymentEth}
-                  onChange={(e) => setPaymentEth(e.target.value)}
-                  placeholder="Buyer payment (Sepolia ETH)"
-                />
-
-                <Card className="border-[#dbe9e3] bg-[#f9fcfb]">
-                  <CardHeader className="pb-2">
-                    <CardTitle>Quadratic Royalty Calculator</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 text-[#355]">
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
-                        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Transfer Number</p>
-                        <p className="m-0 text-2xl font-bold text-[#20473d]">{nextTransferNumber}</p>
-                      </div>
-                      <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
-                        <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Current Royalty</p>
-                        <p className="m-0 text-2xl font-bold text-[#1f6d50]">{royaltyPercent.toFixed(2)}%</p>
-                      </div>
-                    </div>
-
-                    <p className="m-0 text-sm text-[#466]">Formula: royalty = 40% / sqrt(N)</p>
-
-                    <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
-                      <p className="mb-2 mt-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Decay Curve Samples</p>
-                      <div className="flex min-h-32 items-end gap-3">
-                        {decaySamples.map((item) => (
-                          <div key={item.n} className="grid flex-1 justify-items-center gap-1.5">
-                            <div
-                              style={{
-                                width: "100%",
-                                maxWidth: 56,
-                                height: Math.max(20, item.percent * 2),
-                                background: "#7ec9b1",
-                                border: "1px solid #5eb39a",
-                                borderRadius: 8
-                              }}
-                            />
-                            <div className="text-xs text-[#466]">N={item.n}</div>
-                            <div className="text-xs font-semibold text-[#274f45]">{item.percent}%</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-[#9fd8c0] bg-[#e8f8f1] p-3">
-                      <p className="m-0 text-base font-semibold text-[#1f6d50]">
-                        Artisan payout: {artisanPayment.toFixed(6)} ETH
-                      </p>
-                      <p className="m-0 text-sm text-[#355]">from buyer payment of {buyerPayment.toFixed(6)} ETH</p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {projectedTerroir !== null && (
-                  <div
-                    className="rounded-xl border px-3 py-2"
-                    style={{
-                      background: newOwnerVerified ? "#e2f7ed" : "#fff0e0",
-                      borderColor: newOwnerVerified ? "#9fd8c0" : "#e7c09f"
+          {!ESCROW_ONLY_MODE && (
+            <Card className="max-w-4xl">
+              <CardHeader className="pb-2">
+                <CardTitle>Direct Transfer and Royalty Preview</CardTitle>
+                <CardDescription>Use ENS or wallet address, then confirm transfer with projected impact.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={onConfirmTransfer} className="grid gap-3">
+                  <Input
+                    suppressHydrationWarning
+                    required
+                    value={newOwnerInput}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setNewOwnerInput(value);
+                      resolveOwnerInput(value);
                     }}
-                  >
-                    <div className="font-semibold" style={{ color: newOwnerVerified ? "#186d4c" : "#8a5b09" }}>
-                      {newOwnerVerified
-                        ? "Score will remain " + currentTerroir + " — verified handler"
-                        : "Score will drop from " + currentTerroir + " to " + projectedTerroir + " — unverified handler detected"}
+                    placeholder="New owner wallet address or ENS"
+                  />
+
+                  {ensInfo && <p className="m-0 text-[#577]">{ensInfo}</p>}
+
+                  <Input
+                    suppressHydrationWarning
+                    required
+                    type="number"
+                    min="0.0001"
+                    step="0.0001"
+                    value={paymentEth}
+                    onChange={(e) => setPaymentEth(e.target.value)}
+                    placeholder="Buyer payment (Sepolia ETH)"
+                  />
+
+                  <Card className="border-[#dbe9e3] bg-[#f9fcfb]">
+                    <CardHeader className="pb-2">
+                      <CardTitle>Quadratic Royalty Calculator</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 text-[#355]">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
+                          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Transfer Number</p>
+                          <p className="m-0 text-2xl font-bold text-[#20473d]">{nextTransferNumber}</p>
+                        </div>
+                        <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
+                          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Current Royalty</p>
+                          <p className="m-0 text-2xl font-bold text-[#1f6d50]">{royaltyPercent.toFixed(2)}%</p>
+                        </div>
+                      </div>
+
+                      <p className="m-0 text-sm text-[#466]">Formula: royalty = 40% / sqrt(N)</p>
+
+                      <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
+                        <p className="mb-2 mt-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Decay Curve Samples</p>
+                        <div className="flex min-h-32 items-end gap-3">
+                          {decaySamples.map((item) => (
+                            <div key={item.n} className="grid flex-1 justify-items-center gap-1.5">
+                              <div
+                                style={{
+                                  width: "100%",
+                                  maxWidth: 56,
+                                  height: Math.max(20, item.percent * 2),
+                                  background: "#7ec9b1",
+                                  border: "1px solid #5eb39a",
+                                  borderRadius: 8
+                                }}
+                              />
+                              <div className="text-xs text-[#466]">N={item.n}</div>
+                              <div className="text-xs font-semibold text-[#274f45]">{item.percent}%</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-[#9fd8c0] bg-[#e8f8f1] p-3">
+                        <p className="m-0 text-base font-semibold text-[#1f6d50]">
+                          Artisan payout: {artisanPayment.toFixed(6)} ETH
+                        </p>
+                        <p className="m-0 text-sm text-[#355]">from buyer payment of {buyerPayment.toFixed(6)} ETH</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {projectedTerroir !== null && (
+                    <div
+                      className="rounded-xl border px-3 py-2"
+                      style={{
+                        background: newOwnerVerified ? "#e2f7ed" : "#fff0e0",
+                        borderColor: newOwnerVerified ? "#9fd8c0" : "#e7c09f"
+                      }}
+                    >
+                      <div className="font-semibold" style={{ color: newOwnerVerified ? "#186d4c" : "#8a5b09" }}>
+                        {newOwnerVerified
+                          ? "Score will remain " + currentTerroir + " — verified handler"
+                          : "Score will drop from " + currentTerroir + " to " + projectedTerroir + " — unverified handler detected"}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                <Button suppressHydrationWarning disabled={loading} type="submit" className="w-fit">
-                  {loading ? "Processing..." : "Confirm Transfer"}
-                </Button>
+                  <Button suppressHydrationWarning disabled={loading} type="submit" className="w-fit">
+                    {loading ? "Processing..." : "Confirm Transfer"}
+                  </Button>
 
-                {stepProgress && (
-                  <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
-                    {stepProgress}
-                  </div>
-                )}
-              </form>
-            </CardContent>
-          </Card>
+                  {stepProgress && (
+                    <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
+                      {stepProgress}
+                    </div>
+                  )}
+                </form>
+              </CardContent>
+            </Card>
+          )}
 
-          {transferSuccess && (
+          {!ESCROW_ONLY_MODE && transferSuccess && (
             <Card className="max-w-4xl border-[#cde6dc] bg-[#f4fbf8]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-[#1f6d50]">Transfer Completed</CardTitle>
