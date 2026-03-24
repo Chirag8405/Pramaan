@@ -9,7 +9,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import TerritorScore from "../../components/TerritorScore";
 import { giRegions } from "../../src/utils/craftDetector";
-import { getArtisan, getArtisanTokenId, connectWallet, isVerifiedArtisan, registerProduct } from "../../src/utils/contract";
+import {
+  connectWallet,
+  findLatestMintedTokenIdByRecipient,
+  getArtisan,
+  getArtisanTokenId,
+  isVerifiedArtisan,
+  mintProductTwin,
+  registerProduct,
+  verifyProduct
+} from "../../src/utils/contract";
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
 
@@ -128,7 +137,7 @@ export default function RegisterProductPage() {
 
         setForm((prev) => ({
           ...prev,
-          giTag: String(artisanRecord.craft || ""),
+          giTag: "",
           provenanceSigner: address
         }));
 
@@ -293,29 +302,90 @@ export default function RegisterProductPage() {
         }
       );
 
-      setStepProgress("Step 4/4: Confirming...");
+      setStepProgress("Step 4/5: Minting Product NFT twin...");
+
+      const metadataUrl = getIPFSUrl(metadataCid);
+      let mintTerroirScore = 100;
+      try {
+        // Best-effort read; do not fail mint flow if RPC/state indexing lags.
+        const verification = await verifyProduct(productHash);
+        mintTerroirScore = Number(verification?.terroir || 100);
+      } catch (_verifyError) {
+        mintTerroirScore = 100;
+      }
+
+      const mintResult = await mintProductTwin(
+        walletAddress,
+        metadataUrl,
+        mintTerroirScore,
+        metadataCid
+      );
+
+      let mintedTokenId = mintResult?.tokenId ? String(mintResult.tokenId) : "";
+      if (!mintedTokenId) {
+        try {
+          const latestTokenId = await findLatestMintedTokenIdByRecipient(walletAddress);
+          if (latestTokenId > 0) {
+            mintedTokenId = String(latestTokenId);
+          }
+        } catch (_lookupError) {
+          mintedTokenId = "";
+        }
+      }
+
+      setStepProgress("Step 5/5: Confirming...");
 
       const txHash = receipt?.transactionHash || receipt?.hash || "";
+      const mintTxHash =
+        mintResult?.receipt?.transactionHash ||
+        mintResult?.receipt?.hash ||
+        mintResult?.transactionHash ||
+        mintResult?.hash ||
+        "";
       const imageUrl = getIPFSUrl(imageCid);
-      const metadataUrl = getIPFSUrl(metadataCid);
       const verifyUrl = "/verify?hash=" + productHash;
-      const transferUrl = "/transfer?hash=" + productHash;
+      const transferUrl =
+        "/transfer?hash=" +
+        productHash +
+        (mintedTokenId ? "&tokenId=" + encodeURIComponent(mintedTokenId) : "");
 
       setSuccess({
         productHash,
         imageUrl,
         metadataUrl,
+        mintedTokenId,
         provenanceSigner: signerAddress || walletAddress,
         batchId: autoBatch.batchId,
         lotNumber: autoBatch.lotNumber,
         batchSize: autoBatch.batchSize,
         productionDate: autoBatch.productionDate,
         txUrl: txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "",
+        mintTxUrl: mintTxHash ? "https://sepolia.etherscan.io/tx/" + mintTxHash : "",
         verifyUrl,
         transferUrl
       });
 
-      setStatusText("Product registered successfully.");
+      if (typeof window !== "undefined") {
+        const snapshot = {
+          hash: productHash,
+          record: {
+            productHash,
+            ipfsCid: metadataCid,
+            artisan: walletAddress,
+            productName: form.name.trim(),
+            giTag: form.giTag.trim(),
+            registeredAt: Math.floor(Date.now() / 1000),
+            transferCount: 0,
+            handlers: [],
+            handlerVerified: []
+          },
+          terroir: 100,
+          mintedTokenId: mintedTokenId || ""
+        };
+        window.sessionStorage.setItem("pramaan:lastRegisteredProduct", JSON.stringify(snapshot));
+      }
+
+      setStatusText("Product registered and NFT minted successfully.");
     } catch (error) {
       if (isAlreadyRegisteredError(error)) {
         const verifyUrl = "/verify?hash=" + productHash;
@@ -433,9 +503,9 @@ export default function RegisterProductPage() {
             />
             <Input
               required
-              placeholder="GI Tag"
+              placeholder="Category (GI Tag)"
               value={form.giTag}
-              readOnly
+              onChange={(e) => setForm({ ...form, giTag: e.target.value })}
             />
             <Input
               required
@@ -450,30 +520,6 @@ export default function RegisterProductPage() {
               placeholder="Longitude (auto-filled)"
               value={form.lng}
               onChange={(e) => setForm({ ...form, lng: e.target.value })}
-            />
-
-            <Input
-              readOnly
-              placeholder="Batch ID (auto-filled)"
-              value={autoBatchPreview.batchId}
-            />
-
-            <Input
-              readOnly
-              placeholder="Lot Number (auto-filled)"
-              value={autoBatchPreview.lotNumber}
-            />
-
-            <Input
-              readOnly
-              placeholder="Batch Size (auto-filled)"
-              value={autoBatchPreview.batchSize}
-            />
-
-            <Input
-              readOnly
-              placeholder="Date (dd-mm-yyyy, auto-filled)"
-              value={toDdMmYyyy(autoBatchPreview.productionDate)}
             />
 
             <Input type="file" accept="image/*" required onChange={onImageChange} />
@@ -541,6 +587,11 @@ export default function RegisterProductPage() {
                 <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Lot and Size</p>
                 <p className="m-0 text-base font-semibold text-[#20473d]">{success.lotNumber} • {success.batchSize}</p>
               </div>
+
+              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product NFT Token ID</p>
+                <p className="m-0 text-lg font-semibold text-[#20473d]">{success.mintedTokenId || "Auto-detect on Transfer page"}</p>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -552,7 +603,12 @@ export default function RegisterProductPage() {
               </a>
               {success.txUrl && (
                 <a href={success.txUrl} target="_blank" rel="noreferrer" className="no-underline">
-                  <Button variant="secondary">View Etherscan Tx</Button>
+                  <Button variant="secondary">View Registration Tx</Button>
+                </a>
+              )}
+              {success.mintTxUrl && (
+                <a href={success.mintTxUrl} target="_blank" rel="noreferrer" className="no-underline">
+                  <Button variant="secondary">View Mint Tx</Button>
                 </a>
               )}
             </div>
