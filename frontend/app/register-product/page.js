@@ -198,6 +198,14 @@ export default function RegisterProductPage() {
     return hash.slice(0, 10) + "..." + hash.slice(-6);
   }
 
+  function getTruncatedAddress(address) {
+    const text = String(address || "");
+    if (!text || text.length < 14) {
+      return text;
+    }
+    return text.slice(0, 8) + "..." + text.slice(-6);
+  }
+
   function isAlreadyRegisteredError(error) {
     const text = String(error?.shortMessage || error?.message || "").toLowerCase();
     return text.includes("product already registered");
@@ -500,53 +508,67 @@ export default function RegisterProductPage() {
       {statusText && <p className="m-0 text-[#355]">{statusText}</p>}
 
       {success && (
-        <Card className="max-w-4xl">
+        <Card className="max-w-4xl border-[#cde6dc] bg-[#f4fbf8]">
           <CardHeader className="pb-2">
-            <CardTitle>Registration Complete</CardTitle>
+            <CardTitle className="text-[#1f6d50]">Registration Complete</CardTitle>
             <CardDescription>Product twin has been anchored successfully.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-2 text-[#355]">
-            <p className="m-0">Product hash: {success.productHash}</p>
-            <p className="m-0">
-              IPFS Image:{" "}
-              <a href={success.imageUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
-                {success.imageUrl}
-              </a>
-            </p>
-            <p className="m-0">
-              Attestation Metadata:{" "}
-              <a href={success.metadataUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
-                {success.metadataUrl}
-              </a>
-            </p>
-            <p className="m-0">Provenance Signer: {success.provenanceSigner}</p>
-            <p className="m-0">Batch ID (auto): {success.batchId}</p>
-            <p className="m-0">Lot Number (auto): {success.lotNumber}</p>
-            <p className="m-0">Batch Size (auto): {success.batchSize}</p>
-            <p className="m-0">Production Date (auto): {success.productionDate}</p>
-            {success.txUrl && (
-              <p className="m-0">
-                Etherscan:{" "}
-                <a href={success.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
-                  View tx
-                </a>
-              </p>
-            )}
-
-            <div style={{ maxWidth: 340, marginTop: 12 }}>
-              <TerritorScore score={100} />
+          <CardContent className="grid gap-4 text-[#355]">
+            <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
+              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product Hash</p>
+              <p className="m-0 break-all font-mono text-sm text-[#20473d]">{success.productHash}</p>
             </div>
 
-            <p className="m-0">
-              Verification URL:{" "}
-              <Link href={success.verifyUrl} className="font-semibold text-[#176f52] no-underline">
-                {success.verifyUrl}
-              </Link>
-            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Provenance Signer</p>
+                <p className="m-0 font-mono text-sm text-[#20473d]" title={success.provenanceSigner}>
+                  {getTruncatedAddress(success.provenanceSigner)}
+                </p>
+              </div>
 
-            <Link href={success.transferUrl} className="w-fit no-underline">
-              <Button>Transfer Ownership</Button>
-            </Link>
+              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Production Date</p>
+                <p className="m-0 text-base font-semibold text-[#20473d]">{success.productionDate}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Batch ID</p>
+                <p className="m-0 text-base font-semibold text-[#20473d]">{success.batchId}</p>
+              </div>
+
+              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Lot and Size</p>
+                <p className="m-0 text-base font-semibold text-[#20473d]">{success.lotNumber} • {success.batchSize}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <a href={success.imageUrl} target="_blank" rel="noreferrer" className="no-underline">
+                <Button variant="secondary">Open IPFS Image</Button>
+              </a>
+              <a href={success.metadataUrl} target="_blank" rel="noreferrer" className="no-underline">
+                <Button variant="secondary">Open Attestation Metadata</Button>
+              </a>
+              {success.txUrl && (
+                <a href={success.txUrl} target="_blank" rel="noreferrer" className="no-underline">
+                  <Button variant="secondary">View Etherscan Tx</Button>
+                </a>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link href={success.verifyUrl} className="no-underline">
+                <Button>Open Verify Page</Button>
+              </Link>
+              <Link href={success.transferUrl} className="no-underline">
+                <Button variant="secondary">Open Transfer Page</Button>
+              </Link>
+            </div>
+
+            <div style={{ maxWidth: 340 }}>
+              <TerritorScore score={100} />
+            </div>
           </CardContent>
         </Card>
       )}
