@@ -2,6 +2,7 @@ import {
     connect,
     createConfig,
     getAccount,
+    getPublicClient,
     getWalletClient,
     http,
     readContract,
@@ -12,9 +13,11 @@ import {
 import { injected } from "@wagmi/connectors";
 import { sepolia } from "wagmi/chains";
 import {
+    decodeEventLog,
     encodeAbiParameters,
     encodeFunctionData,
     formatEther,
+    getAddress,
     keccak256,
     parseAbiParameters,
     parseEther,
@@ -42,6 +45,18 @@ const SEPOLIA_HEX_CHAIN_ID = "0xaa36a7";
 const DEFAULT_TARGET_ROYALTY_ETH = "0.001";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const ZERO_HASH = "0x" + "00".repeat(32);
+const ERC721_TRANSFER_EVENT_ABI = [
+    {
+        anonymous: false,
+        inputs: [
+            { indexed: true, internalType: "address", name: "from", type: "address" },
+            { indexed: true, internalType: "address", name: "to", type: "address" },
+            { indexed: true, internalType: "uint256", name: "tokenId", type: "uint256" }
+        ],
+        name: "Transfer",
+        type: "event"
+    }
+];
 
 const LEGACY_ARTISAN_READ_ABI = [
     {
@@ -674,14 +689,158 @@ export async function mintProductTwin(recipient, tokenUri, terroirScore, provena
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
     await connectWallet();
 
+    const normalizedRecipient = getAddress(recipient);
+
     const txHash = await writeWithEstimatedGas({
         address: PRODUCT_NFT_ADDRESS,
         abi: PRODUCT_NFT_ABI,
         functionName: "mintProduct",
-        args: [recipient, tokenUri, Number(terroirScore), provenanceCid]
+        args: [normalizedRecipient, tokenUri, Number(terroirScore), provenanceCid]
     });
 
-    return waitForTransactionReceipt(config, { hash: txHash });
+    const receipt = await waitForTransactionReceipt(config, { hash: txHash });
+
+    let tokenId = 0;
+    for (const log of receipt.logs || []) {
+        if (!log?.address) {
+            continue;
+        }
+        if (String(log.address).toLowerCase() !== String(PRODUCT_NFT_ADDRESS).toLowerCase()) {
+            continue;
+        }
+
+        try {
+            const decodedMint = decodeEventLog({
+                abi: PRODUCT_NFT_ABI,
+                data: log.data,
+                topics: log.topics
+            });
+            if (decodedMint?.eventName === "ProductMinted") {
+                tokenId = Number(decodedMint.args?.tokenId || 0n);
+                if (tokenId > 0) {
+                    break;
+                }
+            }
+        } catch (_ignoreMintDecodeError) {
+            // Try Transfer decode fallback below.
+        }
+
+        if (tokenId > 0) {
+            break;
+        }
+
+        try {
+            const decodedTransfer = decodeEventLog({
+                abi: ERC721_TRANSFER_EVENT_ABI,
+                data: log.data,
+                topics: log.topics
+            });
+            if (
+                decodedTransfer?.eventName === "Transfer" &&
+                String(decodedTransfer.args?.from || "").toLowerCase() === ZERO_ADDRESS
+            ) {
+                tokenId = Number(decodedTransfer.args?.tokenId || 0n);
+                if (tokenId > 0) {
+                    break;
+                }
+            }
+        } catch (_ignoreTransferDecodeError) {
+            // Ignore unrelated logs.
+        }
+    }
+
+    return { receipt, tokenId };
+}
+
+export async function getProductNftOwner(tokenId) {
+    assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
+
+    const owner = await readContract(config, {
+        address: PRODUCT_NFT_ADDRESS,
+        abi: [
+            {
+                inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+                name: "ownerOf",
+                outputs: [{ internalType: "address", name: "", type: "address" }],
+                stateMutability: "view",
+                type: "function"
+            }
+        ],
+        functionName: "ownerOf",
+        args: [BigInt(tokenId)]
+    });
+
+    return owner;
+}
+
+export async function findLatestMintedTokenIdByRecipient(recipientAddress) {
+    assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
+
+    const recipient = getAddress(normalizeAddress(recipientAddress, "recipient address"));
+    const publicClient = getPublicClient(config);
+    if (!publicClient) {
+        throw new Error("Could not access public client for NFT lookup.");
+    }
+
+    const latestBlock = await publicClient.getBlockNumber();
+    const maxLookback = 500000n;
+    const windowSize = 20000n;
+    let toBlock = latestBlock;
+
+    while (true) {
+        const fromBlock = toBlock > windowSize ? toBlock - windowSize + 1n : 0n;
+
+        let logs = [];
+        try {
+            logs = await publicClient.getLogs({
+                address: PRODUCT_NFT_ADDRESS,
+                abi: PRODUCT_NFT_ABI,
+                eventName: "ProductMinted",
+                args: { recipient },
+                fromBlock,
+                toBlock
+            });
+        } catch (_error) {
+            logs = [];
+        }
+
+        if (logs.length > 0) {
+            const latestLog = logs[logs.length - 1];
+            return Number(latestLog.args?.tokenId || 0n);
+        }
+
+        // Fallback for providers that do not index custom events reliably.
+        try {
+            const transferLogs = await publicClient.getLogs({
+                address: PRODUCT_NFT_ADDRESS,
+                abi: ERC721_TRANSFER_EVENT_ABI,
+                eventName: "Transfer",
+                args: { from: ZERO_ADDRESS, to: recipient },
+                fromBlock,
+                toBlock
+            });
+
+            if (transferLogs.length > 0) {
+                const latestTransfer = transferLogs[transferLogs.length - 1];
+                return Number(latestTransfer.args?.tokenId || 0n);
+            }
+        } catch (_fallbackError) {
+            // Continue scanning older ranges.
+        }
+
+        if (fromBlock === 0n) {
+            break;
+        }
+
+        const scanned = latestBlock - fromBlock + 1n;
+        if (scanned >= maxLookback) {
+            break;
+        }
+
+        toBlock = fromBlock - 1n;
+    }
+
+    throw new Error("No ProductNFT mint found for this wallet on Sepolia.");
 }
 
 export async function approveEscrowForToken(tokenId) {
