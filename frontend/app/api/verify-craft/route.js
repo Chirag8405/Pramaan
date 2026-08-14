@@ -24,14 +24,32 @@ function extractJsonObject(text) {
         throw new Error("Model returned empty content.");
     }
 
-    const first = text.indexOf("{");
-    const last = text.lastIndexOf("}");
-    if (first === -1 || last === -1 || last <= first) {
+    // Find a balanced JSON object in the returned text. This handles
+    // surrounding commentary or extra text the model may include.
+    const start = text.indexOf("{");
+    if (start === -1) {
         throw new Error("Model did not return a JSON object.");
     }
 
-    const jsonSlice = text.slice(first, last + 1);
-    return JSON.parse(jsonSlice);
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+
+        if (depth === 0) {
+            const jsonSlice = text.slice(start, i + 1);
+            try {
+                return JSON.parse(jsonSlice);
+            } catch (err) {
+                // If parsing fails, continue scanning for another possible object
+                // (rare) or fall through to error below.
+                break;
+            }
+        }
+    }
+
+    throw new Error("Model did not return a valid JSON object.");
 }
 
 async function callOpenAIVision({ base64Image, mimeType }) {
@@ -71,8 +89,24 @@ async function callOpenAIVision({ base64Image, mimeType }) {
         throw new Error(payload?.error?.message || "OpenAI Vision call failed.");
     }
 
-    const text = payload?.output_text || "";
-    return normalizeResult(extractJsonObject(text));
+    // Try several common response shapes for the Responses API.
+    let text = "";
+    if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+        text = payload.output_text;
+    } else if (Array.isArray(payload.output) && payload.output.length > 0) {
+        text = payload.output
+            .map((o) => {
+                if (typeof o === "string") return o;
+                if (Array.isArray(o.content)) return o.content.map((c) => c.text || "").join("");
+                if (typeof o.content === "string") return o.content;
+                return "";
+            })
+            .join("\n");
+    } else if (typeof payload?.text === "string") {
+        text = payload.text;
+    }
+
+    return normalizeResult(extractJsonObject(String(text || "")));
 }
 
 async function callGeminiVision({ base64Image, mimeType }) {
@@ -119,6 +153,14 @@ async function callGeminiVision({ base64Image, mimeType }) {
 
 export async function POST(req) {
     try {
+        const provider = (process.env.VISION_PROVIDER || "openai").toLowerCase();
+        if (provider === "gemini" && !process.env.GEMINI_API_KEY) {
+            return NextResponse.json({ error: "GEMINI_API_KEY is missing on the server." }, { status: 503 });
+        }
+        if (provider === "openai" && !process.env.OPENAI_API_KEY) {
+            return NextResponse.json({ error: "OPENAI_API_KEY is missing on the server." }, { status: 503 });
+        }
+
         const formData = await req.formData();
         const image = formData.get("image");
 
@@ -134,11 +176,7 @@ export async function POST(req) {
         const fileBuffer = Buffer.from(await image.arrayBuffer());
         const base64Image = fileBuffer.toString("base64");
 
-        const provider = (process.env.VISION_PROVIDER || "openai").toLowerCase();
-        const result =
-            provider === "gemini"
-                ? await callGeminiVision({ base64Image, mimeType })
-                : await callOpenAIVision({ base64Image, mimeType });
+        const result = provider === "gemini" ? await callGeminiVision({ base64Image, mimeType }) : await callOpenAIVision({ base64Image, mimeType });
 
         return NextResponse.json(result, { status: 200 });
     } catch (error) {
