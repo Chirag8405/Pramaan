@@ -123,10 +123,10 @@ export default function MonitorPage() {
     let mounted = true;
 
     async function attachWatchers() {
-      const hasProductFeed = Boolean(PRODUCT_REGISTRY_ADDRESS && PRODUCT_REGISTRY_ADDRESS !== "PASTE_ADDRESS_HERE");
-      const hasEscrowFeed = Boolean(ESCROW_MARKETPLACE_ADDRESS && ESCROW_MARKETPLACE_ADDRESS !== "PASTE_ADDRESS_HERE");
-      const hasRoyaltyFeed = Boolean(DYNAMIC_ROYALTY_ADDRESS && DYNAMIC_ROYALTY_ADDRESS !== "PASTE_ADDRESS_HERE");
-      const hasNftFeed = Boolean(PRODUCT_NFT_ADDRESS && PRODUCT_NFT_ADDRESS !== "PASTE_ADDRESS_HERE");
+      const hasProductFeed = Boolean(PRODUCT_REGISTRY_ADDRESS);
+      const hasEscrowFeed = Boolean(ESCROW_MARKETPLACE_ADDRESS);
+      const hasRoyaltyFeed = Boolean(DYNAMIC_ROYALTY_ADDRESS);
+      const hasNftFeed = Boolean(PRODUCT_NFT_ADDRESS);
 
       if (!hasProductFeed && !hasEscrowFeed && !hasRoyaltyFeed && !hasNftFeed) {
         setStatus("No contract addresses configured for monitoring.");

@@ -137,7 +137,7 @@ export default function VerifyPage() {
       transferTimestampsByCount: {}
     };
 
-    if (!PRODUCT_REGISTRY_ADDRESS || PRODUCT_REGISTRY_ADDRESS === "PASTE_ADDRESS_HERE") {
+    if (!PRODUCT_REGISTRY_ADDRESS) {
       return out;
     }
 

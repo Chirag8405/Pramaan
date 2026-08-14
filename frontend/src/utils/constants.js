@@ -11,6 +11,13 @@ function envOrFallback(value, fallback) {
     return normalized || fallback;
 }
 
+function normalizePlaceholder(value, placeholder) {
+    const v = normalizeEnv(value);
+    if (!v) return "";
+    if (v === placeholder) return "";
+    return v;
+}
+
 function toWsUrl(url) {
     if (!url) {
         return "";
@@ -24,34 +31,34 @@ function toWsUrl(url) {
     return url;
 }
 
-export const ARTISAN_REGISTRY_ADDRESS = envOrFallback(
-    process.env.NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS,
+export const ARTISAN_REGISTRY_ADDRESS = normalizePlaceholder(
+    envOrFallback(process.env.NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS, PLACEHOLDER_ADDRESS),
     PLACEHOLDER_ADDRESS
 );
 
-export const PRODUCT_REGISTRY_ADDRESS = envOrFallback(
-    process.env.NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS,
+export const PRODUCT_REGISTRY_ADDRESS = normalizePlaceholder(
+    envOrFallback(process.env.NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS, PLACEHOLDER_ADDRESS),
     PLACEHOLDER_ADDRESS
 );
 
-export const PRODUCT_NFT_ADDRESS = envOrFallback(
-    process.env.NEXT_PUBLIC_PRODUCT_NFT_ADDRESS,
+export const PRODUCT_NFT_ADDRESS = normalizePlaceholder(
+    envOrFallback(process.env.NEXT_PUBLIC_PRODUCT_NFT_ADDRESS, PLACEHOLDER_ADDRESS),
     PLACEHOLDER_ADDRESS
 );
 
-export const DYNAMIC_ROYALTY_ADDRESS = envOrFallback(
-    process.env.NEXT_PUBLIC_DYNAMIC_ROYALTY_ADDRESS,
+export const DYNAMIC_ROYALTY_ADDRESS = normalizePlaceholder(
+    envOrFallback(process.env.NEXT_PUBLIC_DYNAMIC_ROYALTY_ADDRESS, PLACEHOLDER_ADDRESS),
     PLACEHOLDER_ADDRESS
 );
 
-export const ESCROW_MARKETPLACE_ADDRESS = envOrFallback(
-    process.env.NEXT_PUBLIC_ESCROW_MARKETPLACE_ADDRESS,
+export const ESCROW_MARKETPLACE_ADDRESS = normalizePlaceholder(
+    envOrFallback(process.env.NEXT_PUBLIC_ESCROW_MARKETPLACE_ADDRESS, PLACEHOLDER_ADDRESS),
     PLACEHOLDER_ADDRESS
 );
 
 export const CHAIN_ID = Number(envOrFallback(process.env.NEXT_PUBLIC_CHAIN_ID, "11155111"));
-export const RPC_URL = envOrFallback(process.env.NEXT_PUBLIC_RPC_URL, PLACEHOLDER_RPC_URL);
-export const WS_RPC_URL = envOrFallback(
-    process.env.NEXT_PUBLIC_WS_RPC_URL,
-    toWsUrl(RPC_URL) || PLACEHOLDER_WS_RPC_URL
+export const RPC_URL = normalizePlaceholder(envOrFallback(process.env.NEXT_PUBLIC_RPC_URL, PLACEHOLDER_RPC_URL), PLACEHOLDER_RPC_URL);
+export const WS_RPC_URL = normalizePlaceholder(
+    envOrFallback(process.env.NEXT_PUBLIC_WS_RPC_URL, toWsUrl(RPC_URL) || PLACEHOLDER_WS_RPC_URL),
+    PLACEHOLDER_WS_RPC_URL
 );

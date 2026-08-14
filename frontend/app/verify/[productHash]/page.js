@@ -112,7 +112,7 @@ export default function ProductHashVerifyPage() {
                     throw new Error("Invalid product hash format. Expected bytes32 hex string.");
                 }
 
-                if (!PRODUCT_REGISTRY_ADDRESS || PRODUCT_REGISTRY_ADDRESS === "PASTE_ADDRESS_HERE") {
+                if (!PRODUCT_REGISTRY_ADDRESS) {
                     throw new Error("Product registry address is not configured in environment variables.");
                 }
 

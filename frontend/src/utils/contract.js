@@ -149,7 +149,7 @@ function ensureBrowserWallet() {
 }
 
 function assertConfiguredAddress(addressValue, label) {
-    if (!addressValue || addressValue === "PASTE_ADDRESS_HERE") {
+    if (!addressValue) {
         throw new Error(
             label +
             " is not configured. Set NEXT_PUBLIC_" +
