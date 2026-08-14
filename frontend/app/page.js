@@ -60,13 +60,13 @@ export default function HomePage() {
             <Card className="overflow-hidden border-[#d8cab5] bg-linear-to-br from-[#fff8ef] via-[#f7f2e9] to-[#eef6f2]">
                 <CardHeader className="gap-4">
                     <Badge variant="warm" className="w-fit">
-                        Pranaam - Sovereign Traceability System
+                        Pramaan - Sovereign Traceability System
                     </Badge>
                     <CardTitle className="text-3xl leading-tight md:text-5xl">
                         Build Trust for Every Handmade Product
                     </CardTitle>
                     <CardDescription className="max-w-3xl text-base md:text-lg">
-                        Pranaam helps artisans prove origin, certify craft integrity, and receive fair long-term royalties through
+                        Pramaan helps artisans prove origin, certify craft integrity, and receive fair long-term royalties through
                         privacy-preserving identity and on-chain provenance.
                     </CardDescription>
                 </CardHeader>
@@ -87,7 +87,7 @@ export default function HomePage() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Why Pranaam</CardTitle>
+                    <CardTitle>Why Pramaan</CardTitle>
                     <CardDescription>
                         Because trust in handcrafted products should be cryptographically verifiable, economically fair, and easy
                         for everyday users to understand.

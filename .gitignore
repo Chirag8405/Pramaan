@@ -43,3 +43,8 @@ blockchain/cache/
 blockchain/typechain-types/
 blockchain/ignition/deployments/
 blockchain/deployed.json
+# Ignore per-network deployed artifacts
+blockchain/deployed.*.json
+
+# Ignore accidental nested frontend folder
+frontend/frontend/
