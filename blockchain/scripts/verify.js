@@ -5,7 +5,7 @@ const hre = require("hardhat");
 function loadDeployment(networkName) {
   const artifactPath = path.join(__dirname, "..", `deployed.${networkName}.json`);
   if (!fs.existsSync(artifactPath)) {
-    throw new Error(`Missing deployment artifact: ${artifactPath}`);
+    return null;
   }
   return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
 }
@@ -29,14 +29,21 @@ async function verifyContract(address, constructorArguments) {
 
 async function main() {
   if (!process.env.ETHERSCAN_API_KEY) {
-    throw new Error("ETHERSCAN_API_KEY is required to verify contracts.");
+    console.warn("ETHERSCAN_API_KEY is not set; skipping contract verification.");
+    return;
   }
 
   const networkName = hre.network.name;
   const deployed = loadDeployment(networkName);
 
+  if (!deployed) {
+    console.warn(`No deployment artifact found for ${networkName}; skipping verification.`);
+    return;
+  }
+
   if (!deployed.ArtisanRegistry || !deployed.ProductRegistry) {
-    throw new Error("Deployment artifact missing contract addresses.");
+    console.warn("Deployment artifact missing contract addresses; skipping verification.");
+    return;
   }
 
   await verifyContract(deployed.ArtisanRegistry, []);

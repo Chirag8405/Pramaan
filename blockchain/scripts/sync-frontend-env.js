@@ -24,11 +24,10 @@ function loadDeployment(networkName) {
   const blockchainRoot = path.join(__dirname, "..");
   const preferredPath = path.join(blockchainRoot, `deployed.${networkName}.json`);
   const fallbackPath = path.join(blockchainRoot, "deployed.json");
+  const filePath = fs.existsSync(preferredPath) ? preferredPath : fs.existsSync(fallbackPath) ? fallbackPath : null;
 
-  const filePath = fs.existsSync(preferredPath) ? preferredPath : fallbackPath;
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error("No deployment artifact found. Run deployment first.");
+  if (!filePath) {
+    return { data: null, filePath: null };
   }
 
   const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -39,8 +38,10 @@ function main() {
   const networkName = process.argv[2] || "sepolia";
   const { data, filePath } = loadDeployment(networkName);
 
-  if (!data.ArtisanRegistry || !data.ProductRegistry) {
-    throw new Error("Deployment artifact is missing contract addresses.");
+  if (!data) {
+    console.warn("No deployment artifact found. Writing frontend env with RPC defaults only.");
+  } else if (!data.ArtisanRegistry || !data.ProductRegistry) {
+    console.warn("Deployment artifact is missing some contract addresses. Writing whatever is available.");
   }
 
   const frontendEnvPath = path.join(__dirname, "..", "..", "frontend", ".env.local");
@@ -66,8 +67,8 @@ function main() {
     "";
 
   const envContent = [
-    `NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS=${data.ArtisanRegistry}`,
-    `NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS=${data.ProductRegistry}`,
+    `NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS=${data?.ArtisanRegistry || ""}`,
+    `NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS=${data?.ProductRegistry || ""}`,
     `NEXT_PUBLIC_RPC_URL=${nextPublicRpc}`,
     `NEXT_PUBLIC_WS_RPC_URL=${nextPublicWsRpc}`,
     `NEXT_PUBLIC_CRAFT_MODEL_INFERENCE_URL=${nextPublicModelUrl}`,

@@ -5,7 +5,7 @@ const path = require("path");
 function loadDeployment(networkName) {
   const artifactPath = path.join(__dirname, "..", `deployed.${networkName}.json`);
   if (!fs.existsSync(artifactPath)) {
-    throw new Error(`Missing deployment artifact: ${artifactPath}`);
+    return null;
   }
   return JSON.parse(fs.readFileSync(artifactPath, "utf8"));
 }
@@ -46,8 +46,27 @@ async function ensureVerifiedArtisan(artisanRegistry, signerAddress) {
 async function main() {
   const networkName = hre.network.name;
   const [signer] = await hre.ethers.getSigners();
-
   const deployed = loadDeployment(networkName);
+
+  if (!deployed) {
+    console.warn(`No deployment artifact found for ${networkName}; creating a minimal demo artifact without on-chain txs.`);
+    const productHash = hre.ethers.hexlify(hre.ethers.randomBytes(32));
+    const output = {
+      network: networkName,
+      signer: signer.address,
+      productHash,
+      tx: {},
+      links: {},
+      generatedAt: new Date().toISOString(),
+      note: "No deployment artifact present; no on-chain transactions were executed."
+    };
+
+    const outPath = path.join(__dirname, "..", `demo-tx.${networkName}.json`);
+    fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
+    console.log("Wrote minimal demo tx artifact:", outPath);
+    return;
+  }
+
   const artisanRegistry = await hre.ethers.getContractAt("ArtisanRegistry", deployed.ArtisanRegistry);
   const productRegistry = await hre.ethers.getContractAt("ProductRegistry", deployed.ProductRegistry);
 
@@ -59,7 +78,7 @@ async function main() {
   const productHash = hre.ethers.hexlify(hre.ethers.randomBytes(32));
   const metadataHash = hre.ethers.keccak256(hre.ethers.toUtf8Bytes(`metadata:${productHash}`));
   const nonce = hre.ethers.hexlify(hre.ethers.randomBytes(32));
-  const cid = "bafybeigdyrztfaketestcidforjudgepacket123456789";
+  const cid = process.env.DEMO_CID || "REPLACE_WITH_IPFS_CID";
   const productName = "Demo Product Batch";
   const giTag = "Blue Pottery";
   const lat = 26912345;
