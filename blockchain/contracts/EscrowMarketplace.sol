@@ -140,14 +140,33 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         require(msg.sender == escrow.buyer, "Escrow: only buyer can cancel");
         require(block.timestamp > escrow.shippingDeadline, "Escrow: shipping window still active");
 
-        escrow.status = EscrowStatus.Refunded;
-        uint256 amount = escrow.salePrice;
-        escrow.salePrice = 0;
+        _refundAndClose(escrow, EscrowStatus.Refunded);
+    }
 
-        (bool refunded, ) = payable(escrow.buyer).call{value: amount}("");
-        require(refunded, "Escrow: refund failed");
+    /// @notice Permissionless "poke": unsticks an escrow whose deadline has passed without
+    /// relying on the buyer or seller remembering to act.
+    /// @dev Created + shippingDeadline passed  -> same refund path as cancelExpired.
+    ///      Shipped + confirmDeadline passed   -> routes into Disputed for owner arbitration
+    ///      (does NOT move funds itself; resolveDispute decides the outcome exactly as it
+    ///      already does for a manually-raised dispute).
+    function checkExpiry(uint256 escrowId) external nonReentrant {
+        Escrow storage escrow = escrows[escrowId];
 
-        emit EscrowRefunded(escrowId, escrow.buyer, amount);
+        if (escrow.status == EscrowStatus.Created) {
+            require(block.timestamp > escrow.shippingDeadline, "Escrow: shipping window still active");
+            _refundAndClose(escrow, EscrowStatus.Refunded);
+            return;
+        }
+
+        if (escrow.status == EscrowStatus.Shipped) {
+            require(block.timestamp > escrow.confirmDeadline, "Escrow: confirmation window still active");
+            escrow.status = EscrowStatus.Disputed;
+            escrow.disputeReason = "Confirmation window expired without buyer action";
+            emit EscrowDisputed(escrowId, msg.sender, escrow.disputeReason);
+            return;
+        }
+
+        revert("Escrow: not in an expirable state");
     }
 
     function raiseDispute(uint256 escrowId, string calldata reason) external {
@@ -209,5 +228,17 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         productNft.safeTransferFrom(escrow.seller, escrow.buyer, escrow.tokenId);
 
         emit EscrowCompleted(escrow.id, escrow.tokenId, artisanAmount, sellerAmount);
+    }
+
+    /// @dev Shared refund path used by both cancelExpired and checkExpiry's Created branch.
+    function _refundAndClose(Escrow storage escrow, EscrowStatus closedStatus) internal {
+        escrow.status = closedStatus;
+        uint256 amount = escrow.salePrice;
+        escrow.salePrice = 0;
+
+        (bool refunded, ) = payable(escrow.buyer).call{value: amount}("");
+        require(refunded, "Escrow: refund failed");
+
+        emit EscrowRefunded(escrow.id, escrow.buyer, amount);
     }
 }

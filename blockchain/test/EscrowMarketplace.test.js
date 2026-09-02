@@ -492,6 +492,190 @@ describe("EscrowMarketplace", function () {
         });
     });
 
+    describe("checkExpiry — permissionless poke", function () {
+        it("Created + shipping deadline passed: routes through the same refund path as cancelExpired, callable by a random unrelated address", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { artisan, buyer, stranger, productNFT, escrow, dynamicRoyalty } = ctx;
+            const { tokenId, escrowId, salePrice } = await createEscrowFixture(ctx);
+
+            await time.increase(SHIPPING_WINDOW_SEC + 1);
+
+            const buyerBalanceBefore = await ethers.provider.getBalance(buyer.address);
+
+            // Called by `stranger` — not buyer, not seller, not owner — proving this is
+            // genuinely permissionless, unlike cancelExpired which is buyer-only.
+            await expect(escrow.connect(stranger).checkExpiry(escrowId))
+                .to.emit(escrow, "EscrowRefunded")
+                .withArgs(escrowId, buyer.address, salePrice);
+
+            const buyerBalanceAfter = await ethers.provider.getBalance(buyer.address);
+            expect(buyerBalanceAfter - buyerBalanceBefore).to.equal(salePrice);
+
+            expect(await productNFT.ownerOf(tokenId)).to.equal(artisan.address);
+            expect(await dynamicRoyalty.transferCount(tokenId)).to.equal(0n);
+
+            const record = await escrow.escrows(escrowId);
+            expect(record.status).to.equal(EscrowStatus.Refunded);
+            expect(record.salePrice).to.equal(0n);
+        });
+
+        it("Created + shipping deadline NOT yet passed: reverts", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId)).to.be.revertedWith(
+                "Escrow: shipping window still active"
+            );
+        });
+
+        it("Shipped + confirmation deadline passed: routes into Disputed (does NOT move funds or transfer the NFT itself), callable by a random unrelated address", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { artisan, buyer, stranger, productNFT, escrow, escrowAddress } = ctx;
+            const { tokenId, escrowId, salePrice } = await createEscrowFixture(ctx);
+            await escrow.connect(artisan).markShipped(escrowId);
+
+            await time.increase(CONFIRM_WINDOW_SEC + 1);
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId))
+                .to.emit(escrow, "EscrowDisputed")
+                .withArgs(escrowId, stranger.address, "Confirmation window expired without buyer action");
+
+            const record = await escrow.escrows(escrowId);
+            expect(record.status).to.equal(EscrowStatus.Disputed);
+            expect(record.disputeReason).to.equal("Confirmation window expired without buyer action");
+
+            // Funds and NFT must NOT have moved yet — checkExpiry only flips state to
+            // Disputed, it does not itself decide or pay out an outcome.
+            expect(await productNFT.ownerOf(tokenId)).to.equal(artisan.address);
+            expect(await ethers.provider.getBalance(escrowAddress)).to.equal(salePrice);
+            expect(record.salePrice).to.equal(salePrice);
+        });
+
+        it("Shipped + confirmation deadline NOT yet passed: reverts", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { artisan, stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+            await escrow.connect(artisan).markShipped(escrowId);
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId)).to.be.revertedWith(
+                "Escrow: confirmation window still active"
+            );
+        });
+
+        it("a checkExpiry-triggered dispute resolves through resolveDispute exactly like a manually-raised one: sellerWins=true completes the sale", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { owner, artisan, buyer, stranger, productNFT, escrow, dynamicRoyalty } = ctx;
+            const { tokenId, escrowId, salePrice } = await createEscrowFixture(ctx);
+            await escrow.connect(artisan).markShipped(escrowId);
+            await time.increase(CONFIRM_WINDOW_SEC + 1);
+            await escrow.connect(stranger).checkExpiry(escrowId);
+
+            const expectedArtisanAmount = (salePrice * 4000n) / BPS_DENOMINATOR;
+            const expectedSellerAmount = salePrice - expectedArtisanAmount;
+
+            await expect(
+                escrow.connect(owner).resolveDispute(escrowId, true, "Buyer went silent; seller proved delivery")
+            )
+                .to.emit(escrow, "EscrowCompleted")
+                .withArgs(escrowId, tokenId, expectedArtisanAmount, expectedSellerAmount);
+
+            expect(await productNFT.ownerOf(tokenId)).to.equal(buyer.address);
+            expect(await dynamicRoyalty.transferCount(tokenId)).to.equal(1n);
+
+            const record = await escrow.escrows(escrowId);
+            expect(record.status).to.equal(EscrowStatus.Completed);
+        });
+
+        it("a checkExpiry-triggered dispute resolves through resolveDispute exactly like a manually-raised one: sellerWins=false refunds the buyer", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { owner, artisan, buyer, stranger, productNFT, escrow, dynamicRoyalty } = ctx;
+            const { tokenId, escrowId, salePrice } = await createEscrowFixture(ctx);
+            await escrow.connect(artisan).markShipped(escrowId);
+            await time.increase(CONFIRM_WINDOW_SEC + 1);
+            await escrow.connect(stranger).checkExpiry(escrowId);
+
+            const buyerBalanceBefore = await ethers.provider.getBalance(buyer.address);
+
+            await expect(
+                escrow.connect(owner).resolveDispute(escrowId, false, "Seller could not prove delivery")
+            )
+                .to.emit(escrow, "EscrowRefunded")
+                .withArgs(escrowId, buyer.address, salePrice);
+
+            const buyerBalanceAfter = await ethers.provider.getBalance(buyer.address);
+            expect(buyerBalanceAfter - buyerBalanceBefore).to.equal(salePrice);
+            expect(await productNFT.ownerOf(tokenId)).to.equal(artisan.address);
+            expect(await dynamicRoyalty.transferCount(tokenId)).to.equal(0n);
+
+            const record = await escrow.escrows(escrowId);
+            expect(record.status).to.equal(EscrowStatus.Resolved);
+        });
+
+        it("reverts on an already-Completed escrow (non-expirable state)", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { artisan, buyer, stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+            await escrow.connect(artisan).markShipped(escrowId);
+            await escrow.connect(buyer).confirmReceived(escrowId);
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId)).to.be.revertedWith(
+                "Escrow: not in an expirable state"
+            );
+        });
+
+        it("reverts on an already-Refunded escrow (non-expirable state)", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { buyer, stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+            await time.increase(SHIPPING_WINDOW_SEC + 1);
+            await escrow.connect(buyer).cancelExpired(escrowId);
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId)).to.be.revertedWith(
+                "Escrow: not in an expirable state"
+            );
+        });
+
+        it("reverts on an already-Disputed escrow (non-expirable state, regardless of how it got there)", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { buyer, stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+            await escrow.connect(buyer).raiseDispute(escrowId, "manual dispute");
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId)).to.be.revertedWith(
+                "Escrow: not in an expirable state"
+            );
+        });
+
+        it("reverts on an already-Resolved escrow (non-expirable state)", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { owner, buyer, stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+            await escrow.connect(buyer).raiseDispute(escrowId, "manual dispute");
+            await escrow.connect(owner).resolveDispute(escrowId, false, "buyer wins");
+
+            await expect(escrow.connect(stranger).checkExpiry(escrowId)).to.be.revertedWith(
+                "Escrow: not in an expirable state"
+            );
+        });
+
+        it("cancelExpired keeps working exactly as before (backward compatibility): still buyer-only, unaffected by checkExpiry's existence", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { artisan, buyer, stranger, escrow } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx);
+            await time.increase(SHIPPING_WINDOW_SEC + 1);
+
+            // stranger still cannot use cancelExpired (unlike checkExpiry).
+            await expect(escrow.connect(stranger).cancelExpired(escrowId)).to.be.revertedWith(
+                "Escrow: only buyer can cancel"
+            );
+
+            await expect(escrow.connect(buyer).cancelExpired(escrowId)).to.not.be.reverted;
+            const record = await escrow.escrows(escrowId);
+            expect(record.status).to.equal(EscrowStatus.Refunded);
+        });
+    });
+
     describe("raiseDispute", function () {
         it("buyer can raise a dispute from Created", async function () {
             const ctx = await loadFixture(deployFixture);
