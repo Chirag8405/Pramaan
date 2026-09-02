@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
 import { uploadToIPFS } from "../../src/utils/ipfs";
-import { connectWallet, getArtisan, isVerifiedArtisan, markAadhaarVerified, registerArtisan } from "../../src/utils/contract";
+import { connectWallet, getArtisan, isVerifiedArtisan, registerArtisan } from "../../src/utils/contract";
 
 const TRANSFER_EVENT_SIGNATURE =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -48,6 +48,7 @@ export default function ArtisanPage() {
   const [syncingAadhaar, setSyncingAadhaar] = useState(false);
   const [aadhaarSyncedOnChain, setAadhaarSyncedOnChain] = useState(false);
   const [autoSyncAttempted, setAutoSyncAttempted] = useState(false);
+  const [aadhaarConflict, setAadhaarConflict] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(null);
 
@@ -124,6 +125,69 @@ export default function ArtisanPage() {
     };
   }
 
+  // The SDK always writes the (single) active login proof at index 0 of
+  // anonAadhaarProofs (see @anon-aadhaar/react's internal login-verification and
+  // proof-append logic) — this app never accumulates multiple proofs in one session,
+  // so index 0 is always the right one, not a "most recent" guess.
+  function getSerializedAadhaarProof() {
+    const proofs = anonAadhaar?.anonAadhaarProofs;
+    if (!proofs || typeof proofs !== "object") {
+      return null;
+    }
+    return proofs[0] || null;
+  }
+
+  // Shared by the manual button and the auto-sync effect: posts the serialized proof
+  // to the backend verifier, which independently re-verifies the zk proof, checks the
+  // nullifier hasn't been claimed by a different wallet, and calls markAadhaarVerified
+  // itself using a dedicated backend signer (the artisan's own wallet no longer calls
+  // it directly). Returns one of three outcomes so callers can branch on them distinctly
+  // rather than collapsing everything into a single generic error path.
+  async function submitAadhaarProofForVerification(walletAddress) {
+    const serializedProof = getSerializedAadhaarProof();
+    if (!serializedProof) {
+      return { outcome: "error", detail: "No Anon Aadhaar proof found. Complete the proof step first." };
+    }
+
+    let response;
+    try {
+      response = await fetch("/api/verify-aadhaar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serializedProof, walletAddress })
+      });
+    } catch (_networkError) {
+      return { outcome: "error", detail: "Could not reach the verification service. Check your connection and retry." };
+    }
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (_parseError) {
+      // Fall through with payload = null; handled by the generic error branch below.
+    }
+
+    if (response.ok) {
+      return { outcome: "success", alreadyRecorded: Boolean(payload?.alreadyRecorded), txHash: payload?.txHash || "" };
+    }
+
+    if (response.status === 409) {
+      // Distinguish "different wallet already used this identity" (not retryable,
+      // needs a clearly different message) from "verification already in progress"
+      // (transient, retryable) — both are 409s but mean very different things.
+      const detail = String(payload?.error || "");
+      if (detail.toLowerCase().includes("already verified a different wallet")) {
+        return { outcome: "conflict", detail: detail || "This Aadhaar identity has already verified a different wallet." };
+      }
+      return { outcome: "in-progress", detail: detail || "Verification already in progress. Please try again shortly." };
+    }
+
+    return {
+      outcome: "error",
+      detail: payload?.error || payload?.detail || `Verification failed (HTTP ${response.status}).`
+    };
+  }
+
   async function onSyncAadhaarOnChain() {
     if (!isAnonVerified) {
       setMessage("Complete Anon Aadhaar proof first.");
@@ -132,21 +196,35 @@ export default function ArtisanPage() {
 
     setSyncingAadhaar(true);
     setMessage("");
+    setAadhaarConflict(false);
 
     try {
       const connected = await connectWallet();
       setWallet(connected.address);
 
-      await markAadhaarVerified(connected.address);
-      setAadhaarSyncedOnChain(true);
-      setMessage("Aadhaar verification synced on-chain for this wallet. Now click Register Artisan to mint identity.");
+      const result = await submitAadhaarProofForVerification(connected.address);
+
+      if (result.outcome === "success") {
+        setAadhaarSyncedOnChain(true);
+        setMessage(
+          result.alreadyRecorded
+            ? "Aadhaar verification already confirmed for this wallet. Now click Register Artisan to mint identity."
+            : "Aadhaar verification synced on-chain for this wallet. Now click Register Artisan to mint identity."
+        );
+      } else if (result.outcome === "conflict") {
+        setAadhaarSyncedOnChain(false);
+        setAadhaarConflict(true);
+        setMessage(result.detail);
+      } else if (result.outcome === "in-progress") {
+        setAadhaarSyncedOnChain(false);
+        setMessage(result.detail + " You can click Sync again shortly.");
+      } else {
+        setAadhaarSyncedOnChain(false);
+        setMessage(result.detail);
+      }
     } catch (error) {
       setAadhaarSyncedOnChain(false);
-      setMessage(
-        error?.shortMessage ||
-        error?.message ||
-        "Could not sync Aadhaar status on-chain. Ensure this wallet has verifier role."
-      );
+      setMessage(error?.shortMessage || error?.message || "Could not connect wallet to sync Aadhaar status.");
     } finally {
       setSyncingAadhaar(false);
     }
@@ -156,6 +234,7 @@ export default function ArtisanPage() {
     if (!wallet || !isAnonVerified) {
       setAutoSyncAttempted(false);
       setAadhaarSyncedOnChain(false);
+      setAadhaarConflict(false);
       return;
     }
 
@@ -170,12 +249,26 @@ export default function ArtisanPage() {
       setSyncingAadhaar(true);
 
       try {
-        await markAadhaarVerified(wallet);
+        const result = await submitAadhaarProofForVerification(wallet);
         if (!active) {
           return;
         }
-        setAadhaarSyncedOnChain(true);
-        setMessage("Anon Aadhaar verified and auto-synced on-chain.");
+
+        if (result.outcome === "success") {
+          setAadhaarSyncedOnChain(true);
+          setMessage(
+            result.alreadyRecorded
+              ? "Anon Aadhaar already verified on-chain for this wallet."
+              : "Anon Aadhaar verified and auto-synced on-chain."
+          );
+        } else if (result.outcome === "conflict") {
+          setAadhaarSyncedOnChain(false);
+          setAadhaarConflict(true);
+          setMessage(result.detail);
+        } else {
+          // "in-progress" or generic error: non-blocking, keep manual sync available.
+          setAadhaarSyncedOnChain(false);
+        }
       } catch (_error) {
         if (!active) {
           return;
@@ -509,19 +602,27 @@ export default function ArtisanPage() {
               <Button
                 type="button"
                 onClick={onSyncAadhaarOnChain}
-                disabled={!isAnonVerified || syncingAadhaar}
+                disabled={!isAnonVerified || syncingAadhaar || aadhaarConflict}
                 className="w-fit"
               >
                 {syncingAadhaar
-                  ? "Syncing Aadhaar..."
+                  ? "Verifying proof..."
                   : aadhaarSyncedOnChain
-                    ? "Aadhaar Synced On-Chain"
-                    : "Sync Aadhaar Status On-Chain (wallet prompt)"}
+                    ? "Aadhaar Verified On-Chain"
+                    : "Verify Aadhaar Proof"}
               </Button>
 
               {aadhaarSyncedOnChain && (
                 <div className="rounded-lg border border-[#3e9f74] bg-[#dcf8e8] px-3 py-2 font-semibold text-[#1c664c]">
-                  On-chain Aadhaar flag updated for connected wallet.
+                  On-chain Aadhaar verification confirmed for connected wallet.
+                </div>
+              )}
+
+              {aadhaarConflict && (
+                <div className="rounded-lg border border-[#c94b4b] bg-[#fdeaea] px-3 py-2 font-semibold text-[#8a1f1f]">
+                  This Aadhaar identity has already verified a different wallet. Each Aadhaar identity may
+                  verify only one wallet — connect the wallet you originally verified, or use a different
+                  Aadhaar identity.
                 </div>
               )}
             </div>
