@@ -119,15 +119,39 @@ export async function POST(req) {
             return NextResponse.json({ error: "Verified proof did not contain a nullifier." }, { status: 400 });
         }
 
-        // One locked read decides all three outcomes: a different wallet already used
-        // this nullifier (conflict), this same wallet already did (idempotent success,
-        // no need to re-send a transaction), or neither (proceed to verify on-chain).
-        const existingEntry = await withStoreLock(async () => {
+        // Claim-then-verify-then-confirm-or-release: the read AND the "pending" write
+        // happen under the SAME lock acquisition, so two concurrent requests for the
+        // same nullifier cannot both observe "unused" and both proceed — only one can
+        // win the claim. Everything after this block (verify/tx/wait) runs unlocked;
+        // only the claim itself needs to be atomic.
+        const claimOutcome = await withStoreLock(async () => {
             const store = await readNullifierStore();
-            return store[nullifier] || null;
+            const existingEntry = store[nullifier] || null;
+
+            if (existingEntry && existingEntry.walletAddress !== walletAddress) {
+                return { kind: "conflict" };
+            }
+
+            if (existingEntry && existingEntry.walletAddress === walletAddress && existingEntry.status === "confirmed") {
+                return { kind: "already-confirmed" };
+            }
+
+            if (existingEntry && existingEntry.walletAddress === walletAddress && existingEntry.status === "pending") {
+                return { kind: "in-progress" };
+            }
+
+            // No entry (or, defensively, an entry in an unrecognized status for this
+            // same wallet): claim it now, under this same lock acquisition.
+            store[nullifier] = {
+                walletAddress,
+                status: "pending",
+                timestamp: new Date().toISOString()
+            };
+            await writeNullifierStore(store);
+            return { kind: "claimed" };
         });
 
-        if (existingEntry && existingEntry.walletAddress !== walletAddress) {
+        if (claimOutcome.kind === "conflict") {
             return NextResponse.json(
                 {
                     error:
@@ -138,8 +162,8 @@ export async function POST(req) {
             );
         }
 
-        if (existingEntry && existingEntry.walletAddress === walletAddress) {
-            // Same wallet re-submitting an already-recorded nullifier: treat as
+        if (claimOutcome.kind === "already-confirmed") {
+            // Same wallet re-submitting an already-confirmed nullifier: treat as
             // idempotent success rather than re-sending an on-chain transaction
             // (markAadhaarVerified itself is idempotent on-chain too — it just
             // re-sets the flag to true — but skipping the tx avoids burning gas
@@ -147,14 +171,41 @@ export async function POST(req) {
             return NextResponse.json({ verified: true, walletAddress, alreadyRecorded: true }, { status: 200 });
         }
 
+        if (claimOutcome.kind === "in-progress") {
+            return NextResponse.json(
+                {
+                    error:
+                        "Verification for this Aadhaar identity and wallet is already in progress. " +
+                        "Please try again shortly."
+                },
+                { status: 409 }
+            );
+        }
+
+        // claimOutcome.kind === "claimed" — this request won the claim, proceed.
+        // From here on, ANY early return must release the pending claim first (by
+        // deleting the entry), so a failed attempt never leaves the nullifier stuck
+        // in "pending" forever and blocks a legitimate retry.
+        async function releaseClaim() {
+            await withStoreLock(async () => {
+                const store = await readNullifierStore();
+                if (store[nullifier]?.status === "pending" && store[nullifier]?.walletAddress === walletAddress) {
+                    delete store[nullifier];
+                    await writeNullifierStore(store);
+                }
+            });
+        }
+
         const backendSignerKey = process.env.AADHAAR_VERIFIER_SIGNER_PRIVATE_KEY;
         if (!backendSignerKey) {
+            await releaseClaim();
             return NextResponse.json(
                 { error: "Backend Aadhaar verifier signer is not configured." },
                 { status: 503 }
             );
         }
         if (!ARTISAN_REGISTRY_ADDRESS) {
+            await releaseClaim();
             return NextResponse.json({ error: "ArtisanRegistry address is not configured." }, { status: 503 });
         }
 
@@ -167,6 +218,7 @@ export async function POST(req) {
             const tx = await artisanRegistry.markAadhaarVerified(walletAddress);
             receipt = await tx.wait();
         } catch (error) {
+            await releaseClaim();
             const detail =
                 error?.reason ||
                 error?.error?.message ||
@@ -179,12 +231,14 @@ export async function POST(req) {
             );
         }
 
-        // Record the nullifier -> wallet mapping only AFTER the on-chain call succeeds,
-        // so a failed transaction never burns the nullifier for a legitimate retry.
+        // Transition the existing "pending" entry to "confirmed" (update, not
+        // create-from-scratch) only AFTER the on-chain call succeeds, so a failed
+        // transaction never leaves a confirmed nullifier behind.
         await withStoreLock(async () => {
             const store = await readNullifierStore();
             store[nullifier] = {
                 walletAddress,
+                status: "confirmed",
                 verifiedAt: new Date().toISOString(),
                 txHash: receipt?.transactionHash || ""
             };
