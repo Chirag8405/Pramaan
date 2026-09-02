@@ -48,3 +48,5 @@ blockchain/deployed.*.json
 
 # Ignore accidental nested frontend folder
 frontend/frontend/
+.vercel
+.env*

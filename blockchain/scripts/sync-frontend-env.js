@@ -34,6 +34,17 @@ function loadDeployment(networkName) {
   return { data, filePath };
 }
 
+// Keys this script owns and will overwrite on every run, sourced from the deployment
+// artifact and RPC/chain config. Every OTHER key already present in .env.local (Pinata
+// secrets, demo keys, currency metadata, etc.) is preserved untouched.
+const MANAGED_ADDRESS_KEYS = {
+  ArtisanRegistry: "NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS",
+  ProductRegistry: "NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS",
+  ProductNFT: "NEXT_PUBLIC_PRODUCT_NFT_ADDRESS",
+  DynamicRoyalty: "NEXT_PUBLIC_DYNAMIC_ROYALTY_ADDRESS",
+  EscrowMarketplace: "NEXT_PUBLIC_ESCROW_MARKETPLACE_ADDRESS"
+};
+
 function main() {
   const networkName = process.argv[2] || "sepolia";
   const { data, filePath } = loadDeployment(networkName);
@@ -65,21 +76,43 @@ function main() {
     process.env.NEXT_PUBLIC_VERCEL_URL ||
     existingEnv.NEXT_PUBLIC_VERCEL_URL ||
     "";
+  const nextPublicChainId =
+    (data && data.chainId ? String(data.chainId) : "") ||
+    existingEnv.NEXT_PUBLIC_CHAIN_ID ||
+    "11155111";
 
-  const envContent = [
-    `NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS=${data?.ArtisanRegistry || ""}`,
-    `NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS=${data?.ProductRegistry || ""}`,
-    `NEXT_PUBLIC_RPC_URL=${nextPublicRpc}`,
-    `NEXT_PUBLIC_WS_RPC_URL=${nextPublicWsRpc}`,
-    `NEXT_PUBLIC_CRAFT_MODEL_INFERENCE_URL=${nextPublicModelUrl}`,
-    `NEXT_PUBLIC_VERCEL_URL=${nextPublicVercelUrl}`,
-    ""
-  ].join("\n");
+  // Merge: start from every key already in .env.local, then overwrite only the keys
+  // this script owns. Nothing pre-existing is dropped.
+  const mergedEnv = { ...existingEnv };
+
+  for (const [deployedKey, envKey] of Object.entries(MANAGED_ADDRESS_KEYS)) {
+    if (data && data[deployedKey]) {
+      mergedEnv[envKey] = data[deployedKey];
+    }
+  }
+
+  mergedEnv.NEXT_PUBLIC_RPC_URL = nextPublicRpc;
+  mergedEnv.NEXT_PUBLIC_WS_RPC_URL = nextPublicWsRpc;
+  mergedEnv.NEXT_PUBLIC_CRAFT_MODEL_INFERENCE_URL = nextPublicModelUrl;
+  mergedEnv.NEXT_PUBLIC_VERCEL_URL = nextPublicVercelUrl;
+  mergedEnv.NEXT_PUBLIC_CHAIN_ID = nextPublicChainId;
+
+  const changedKeys = Object.keys(mergedEnv).filter((key) => existingEnv[key] !== mergedEnv[key]);
+
+  const envContent =
+    Object.entries(mergedEnv)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n") + "\n";
 
   fs.writeFileSync(frontendEnvPath, envContent);
 
   console.log("Using deployment artifact:", filePath);
   console.log("Wrote frontend env:", frontendEnvPath);
+  console.log("Keys changed:", changedKeys.length ? changedKeys.join(", ") : "(none)");
+  console.log(
+    "Keys preserved unchanged:",
+    Object.keys(existingEnv).filter((k) => !changedKeys.includes(k)).length
+  );
 }
 
 main();

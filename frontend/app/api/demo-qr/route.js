@@ -13,29 +13,10 @@ function sanitizeSecret(value) {
     return text.startsWith("0x") ? text : "0x" + text;
 }
 
-function parseEnvValue(envText, key) {
-    const lines = String(envText || "").split(/\r?\n/);
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) {
-            continue;
-        }
-        if (!trimmed.startsWith(key + "=")) {
-            continue;
-        }
-        const value = trimmed.slice((key + "=").length).trim();
-        const hashIndex = value.indexOf("#");
-        const cleanValue = hashIndex >= 0 ? value.slice(0, hashIndex).trim() : value;
-        return cleanValue.replace(/^['\"]|['\"]$/g, "").trim();
-    }
-    return "";
-}
-
 export async function GET() {
     let productHash = String(process.env.NEXT_PUBLIC_DEMO_PRODUCT_HASH || "").trim();
     let signer = "";
     let source = "env";
-    let localPrivateKey = "";
 
     try {
         const demoFile = path.join(process.cwd(), "..", "blockchain", "demo-tx.sepolia.json");
@@ -54,21 +35,18 @@ export async function GET() {
         // Ignore missing demo file and fallback to environment variables.
     }
 
-    try {
-        const blockchainEnvFile = path.join(process.cwd(), "..", "blockchain", ".env");
-        const envRaw = await fs.readFile(blockchainEnvFile, "utf8");
-        localPrivateKey = parseEnvValue(envRaw, "PRIVATE_KEY");
-    } catch (_error) {
-        // Ignore if blockchain .env does not exist.
-    }
-
     const secret = sanitizeSecret(
         process.env.DEMO_SCAN_SECRET ||
         process.env.NEXT_PUBLIC_DEMO_SCAN_SECRET ||
-        process.env.PRIVATE_KEY ||
-        localPrivateKey ||
         ""
     );
+
+    if (!secret) {
+        return NextResponse.json(
+            { error: "demo scan secret not configured" },
+            { status: 500 }
+        );
+    }
 
     return NextResponse.json({
         productHash,

@@ -1,21 +1,21 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "ArtisanRegistry": "0x1eeC6F371B6F33225C573a1BD04C91dC9285f3A6",
-  "DynamicRoyalty": "0xb1DEE44BC4631F147d107Ea8D3CC779943f12eDb",
-  "ProductNFT": "0xbc80dEd18Ef82A74300eEb79e4AC58B15309e5aA",
-  "EscrowMarketplace": "0x01d946371FEd0a67cb49fE30191b25AE54BA33B0",
-  "ProductRegistry": "0xda5B19B569e8626665c7EcCb6339622591680184",
+  "ArtisanRegistry": "0xD9342a09b8Fa25Cd6d739f6dA20dA3C11D74Dbf8",
+  "DynamicRoyalty": "0xCBC803996C5576EF8f67764DfAf0c760645dC54E",
+  "ProductNFT": "0x1528Cc841C2F012c620dcBfb79Cc61eBde4c558C",
+  "EscrowMarketplace": "0x01B0Eb8e41533B8619d4e7e4C3993297849DBbee",
+  "ProductRegistry": "0x01658a22F94dbdD40218cA9a7d13cD77960f3cA0",
   "deployTx": {
-    "ArtisanRegistry": "0x06a50fc9a312d8bd708fce4a383017be2bbcbc7eab70a6a32b6f88e30656809c",
-    "ProductRegistry": "0x94ea89575a7235c82294f47ffe75afd8fe095ee357a14724238b5fb5cc3125b1"
+    "ArtisanRegistry": "0x6640fb686a5ae47b93ce98fffc1f538846beb1de1aed7da886a6a7aaea7966f4",
+    "ProductRegistry": "0xfbc8d76cd2ce984abb86bab6111f6aa80a80521b402b32629aa89c75631cde2c"
   },
   "explorer": {
     "baseUrl": "https://sepolia.etherscan.io",
-    "ArtisanRegistry": "https://sepolia.etherscan.io/address/0x1eeC6F371B6F33225C573a1BD04C91dC9285f3A6",
-    "ProductRegistry": "https://sepolia.etherscan.io/address/0xda5B19B569e8626665c7EcCb6339622591680184",
-    "ArtisanRegistryTx": "https://sepolia.etherscan.io/tx/0x06a50fc9a312d8bd708fce4a383017be2bbcbc7eab70a6a32b6f88e30656809c",
-    "ProductRegistryTx": "https://sepolia.etherscan.io/tx/0x94ea89575a7235c82294f47ffe75afd8fe095ee357a14724238b5fb5cc3125b1"
+    "ArtisanRegistry": "https://sepolia.etherscan.io/address/0xD9342a09b8Fa25Cd6d739f6dA20dA3C11D74Dbf8",
+    "ProductRegistry": "https://sepolia.etherscan.io/address/0x01658a22F94dbdD40218cA9a7d13cD77960f3cA0",
+    "ArtisanRegistryTx": "https://sepolia.etherscan.io/tx/0x6640fb686a5ae47b93ce98fffc1f538846beb1de1aed7da886a6a7aaea7966f4",
+    "ProductRegistryTx": "https://sepolia.etherscan.io/tx/0xfbc8d76cd2ce984abb86bab6111f6aa80a80521b402b32629aa89c75631cde2c"
   },
-  "deployedAt": "2026-03-23T21:39:38.221Z"
+  "deployedAt": "2026-09-02T12:38:13.519Z"
 }
