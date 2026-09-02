@@ -15,9 +15,20 @@ interface IArtisanPenaltyRegistry {
 contract DynamicRoyalty is Ownable, ReentrancyGuard {
     uint256 private constant BPS_DENOMINATOR = 10_000;
 
-    // Precomputed percentages converted to bps for transfer IDs 1-10.
-    // T1=40%, T2=28%, T3=23%, T4=20%, T5=17%, T6=16%, T7=15%, T8=14%, T9=13%, T10=12%
-    uint16[10] private TAPER_BPS = [4000, 2800, 2300, 2000, 1700, 1600, 1500, 1400, 1300, 1200];
+    // Precomputed percentages converted to bps for transfer IDs 1-15.
+    // T1=40%, T2=28%, T3=23%, T4=20%, T5=17%, T6=16%, T7=15%, T8=14%, T9=13%, T10=12%,
+    // T11=11.5%, T12=11%, T13=10.6%, T14=10.3%, T15=10%.
+    //
+    // Extended past T10 (was the original cutoff) because 4000/sqrt(transferId) is flat
+    // at 1333 bps for every transferId in [9, 15] (integer sqrt of 9..15 is all 3), which
+    // is HIGHER than the table's T10 value of 1200 — switching straight from the table to
+    // the formula at T11 made royalty bps jump UP at the 11th resale instead of continuing
+    // to decay. The table now covers the entire flat plateau (through T15) and lands at
+    // 1000 bps, exactly matching the formula's next plateau (4000/sqrt(16..24) = 1000), so
+    // the handoff at T16 is seamless with no discontinuity.
+    uint16[15] private TAPER_BPS = [
+        4000, 2800, 2300, 2000, 1700, 1600, 1500, 1400, 1300, 1200, 1150, 1100, 1060, 1030, 1000
+    ];
 
     address public marketplace;
     address public minterRegistrar;
@@ -169,7 +180,7 @@ contract DynamicRoyalty is Ownable, ReentrancyGuard {
     function _royaltyBpsForTransfer(uint256 transferId) internal view returns (uint256) {
         require(transferId > 0, "DynamicRoyalty: transferId must be >= 1");
 
-        if (transferId <= 10) {
+        if (transferId <= 15) {
             return TAPER_BPS[transferId - 1];
         }
 
