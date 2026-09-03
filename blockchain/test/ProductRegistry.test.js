@@ -877,6 +877,149 @@ describe("ProductRegistry", function () {
             await expect(ctx.productRegistry.verifyProduct(unknownHash)).to.be.revertedWith("Product not found");
         });
     });
+
+    // transferProduct's two payment legs (royalty to product.artisan, remainder to
+    // msg.sender/seller) both use a low-level .call{value: ...}("") guarded by a
+    // require. No EOA can ever make that .call fail, so these branches need a
+    // RejectingPayee mock (no receive()/fallback) standing in as the payee. The two
+    // branches are independently isolable: product.artisan is fixed at registration
+    // (whoever called registerProduct), while msg.sender/seller is whoever calls
+    // transferProduct — different actors, so each test puts the mock in only one role
+    // and a normal EOA in the other, proving the untouched branch still succeeds while
+    // the mock's branch is the one that reverts.
+    describe("transferProduct — payment-failure branches (require(paidRoyalty)/require(paidSeller))", function () {
+        async function deployRejectingPayee() {
+            const RejectingPayee = await ethers.getContractFactory("RejectingPayee");
+            const mock = await RejectingPayee.deploy();
+            await mock.waitForDeployment();
+            return { mock, mockAddress: await mock.getAddress() };
+        }
+
+        it("reverts with 'Royalty payment failed' when the ORIGINAL ARTISAN cannot receive ETH (seller/EOA payment leg is unaffected)", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { owner, buyer, productRegistry, productRegistryAddress, chainId } = ctx;
+            const { mock: rejectingArtisan, mockAddress: rejectingArtisanAddress } = await deployRejectingPayee();
+
+            // The mock itself must register as a verified artisan, since product.artisan
+            // is whoever calls registerProduct — here, the mock contract.
+            await rejectingArtisan.registerAsArtisan(
+                await ctx.artisanRegistry.getAddress(),
+                "Rejecting Artisan",
+                "Pottery",
+                "Khurja"
+            );
+            await ctx.artisanRegistry.connect(owner).markAadhaarVerified(rejectingArtisanAddress);
+
+            const p = sampleProduct({ productHash: ethers.keccak256(ethers.toUtf8Bytes("product-rejecting-artisan")) });
+
+            // The digest's "artisan" field must be the mock's address, since it will be
+            // msg.sender inside registerProduct (called via registerProductAsArtisan).
+            // provenanceSigner can still be a normal EOA — it only needs to sign the
+            // attestation, not be a verified artisan itself.
+            const digest = computeAttestationDigest({
+                chainId,
+                contractAddress: productRegistryAddress,
+                productHash: p.productHash,
+                metadataHash: p.metadataHash,
+                artisan: rejectingArtisanAddress,
+                provenanceSigner: ctx.wrongSigner.address,
+                cid: p.cid,
+                name: p.name,
+                giTag: p.giTag,
+                lat: p.lat,
+                lng: p.lng
+            });
+            const deviceSignature = await signAttestationDigest(ctx.wrongSigner, digest);
+
+            await rejectingArtisan.registerProductAsArtisan(
+                productRegistryAddress,
+                p.productHash,
+                p.cid,
+                p.name,
+                p.giTag,
+                p.metadataHash,
+                ctx.wrongSigner.address,
+                deviceSignature,
+                p.lat,
+                p.lng
+            );
+
+            // The registering artisan (the mock) is the current owner immediately after
+            // registration (_currentOwner returns product.artisan when handlers[] is
+            // empty). Move ownership to `buyer`, a normal EOA, with a free (value: 0)
+            // transfer first, called BY the mock via its own transferProductAsSeller
+            // pass-through — that leg pays nothing, so it can't trip either payment
+            // branch — so that `buyer` becomes msg.sender/seller for the paid transfer
+            // that actually exercises the royalty-payment failure below.
+            await rejectingArtisan.transferProductAsSeller(productRegistryAddress, p.productHash, buyer.address, {
+                value: 0
+            });
+
+            // This is the SECOND transfer overall (transferCount was already incremented
+            // to 1 by the free hand-off above): royaltyBps = 4000/sqrt(2) = 4000/1 = 4000
+            // (integer sqrt(2) = 1), so royaltyAmount > 0 and the royalty-payment branch
+            // actually executes. Seller here is `buyer`, a normal EOA, so if the
+            // transaction reverted for any reason OTHER than the royalty payment, this
+            // test would still fail — the seller leg is not the one under test, but its
+            // normal-case success is implied by the assertion not seeing a different revert.
+            await expect(
+                productRegistry.connect(buyer).transferProduct(p.productHash, buyer.address, {
+                    value: ethers.parseEther("1")
+                })
+            ).to.be.revertedWith("Royalty payment failed");
+        });
+
+        it("reverts with 'Seller payout failed' when the CURRENT OWNER/SELLER cannot receive ETH (artisan/EOA royalty leg is unaffected)", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { artisan, productRegistry, productRegistryAddress, chainId } = ctx;
+            const { mock: rejectingSeller, mockAddress: rejectingSellerAddress } = await deployRejectingPayee();
+
+            const p = sampleProduct({ productHash: ethers.keccak256(ethers.toUtf8Bytes("product-rejecting-seller")) });
+
+            // Normal registration: artisan is a regular verified EOA (from the fixture),
+            // so the royalty leg (paid to artisan) is unaffected by this test.
+            const { deviceSignature } = await buildSignedAttestation({
+                productRegistryAddress,
+                chainId,
+                artisanAddress: artisan.address,
+                provenanceSigner: artisan,
+                ...p
+            });
+
+            await productRegistry
+                .connect(artisan)
+                .registerProduct(
+                    p.productHash,
+                    p.cid,
+                    p.name,
+                    p.giTag,
+                    p.metadataHash,
+                    artisan.address,
+                    deviceSignature,
+                    p.lat,
+                    p.lng
+                );
+
+            // First transfer: current owner is still `artisan` (product.artisan itself,
+            // per _currentOwner when handlers[] is empty) — but the mock must be the one
+            // CALLING transferProduct to become msg.sender/seller for the payout leg. To
+            // do that without the mock already owning the product, the mock instead
+            // becomes the second-transfer seller: artisan transfers to the mock first
+            // (free transfer, value: 0, so no payment branches trigger on this leg), then
+            // the mock transfers onward and is the one who should receive sellerAmount.
+            await productRegistry.connect(artisan).transferProduct(p.productHash, rejectingSellerAddress, { value: 0 });
+
+            // Second transfer, called BY the mock (so mock is msg.sender/seller).
+            // transferCount is now 2 -> royaltyBps = 4000/sqrt(2) = 4000/1 = 4000 (integer
+            // sqrt(2) = 1), still > 0, so BOTH legs execute; artisan (a normal EOA) gets
+            // the royalty leg, the mock gets the seller leg, which must fail.
+            await expect(
+                rejectingSeller.transferProductAsSeller(productRegistryAddress, p.productHash, artisan.address, {
+                    value: ethers.parseEther("1")
+                })
+            ).to.be.revertedWith("Seller payout failed");
+        });
+    });
 });
 
 // hardhat-chai-matchers doesn't ship an "any uint" arg matcher for withArgs the way

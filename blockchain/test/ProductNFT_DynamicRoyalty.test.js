@@ -432,6 +432,29 @@ describe("ProductNFT + DynamicRoyalty", function () {
             ).to.be.revertedWith("Ownable: caller is not the owner");
         });
 
+        it("setArtisanRegistry: reverts for non-owner", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { stranger, dynamicRoyalty } = ctx;
+
+            await expect(
+                dynamicRoyalty.connect(stranger).setArtisanRegistry(stranger.address)
+            ).to.be.revertedWith("Ownable: caller is not the owner");
+        });
+
+        it("setArtisanRegistry: succeeds for the owner and updates the public artisanRegistry address", async function () {
+            const ctx = await loadFixture(deployFixture);
+            const { owner, stranger, dynamicRoyalty } = ctx;
+
+            // setArtisanRegistry has no zero-address guard in the contract (unlike
+            // setMarketplace/setMinterRegistrar), so this also confirms the happy path
+            // actually writes through, not just that the revert path is gated correctly.
+            await expect(dynamicRoyalty.connect(owner).setArtisanRegistry(stranger.address))
+                .to.emit(dynamicRoyalty, "ArtisanRegistryUpdated")
+                .withArgs(stranger.address);
+
+            expect(await dynamicRoyalty.artisanRegistry()).to.equal(stranger.address);
+        });
+
         it("registerOriginalMinter: reverts when called by anyone other than the registered minterRegistrar", async function () {
             const ctx = await loadFixture(deployFixture);
             const { stranger, dynamicRoyalty } = ctx;

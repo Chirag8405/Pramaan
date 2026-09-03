@@ -69,11 +69,6 @@ contract ArtisanRegistry is ERC721, Ownable {
         }
     }
 
-    modifier onlyRegistered() {
-        require(artisans[msg.sender].registeredAt != 0, "ArtisanRegistry: not registered");
-        _;
-    }
-
     modifier onlyVerifiedArtisan() {
         require(isVerifiedArtisan(msg.sender), "ArtisanRegistry: not verified artisan");
         _;
