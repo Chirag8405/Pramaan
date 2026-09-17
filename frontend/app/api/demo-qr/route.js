@@ -1,8 +1,11 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { ethers } from "ethers";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
+const AUTH_MESSAGE = "Authentic Pramaan Scan";
 
 function sanitizeSecret(value) {
     const raw = String(value || "").trim();
@@ -48,11 +51,36 @@ export async function GET() {
         );
     }
 
+    if (!/^0x[0-9a-fA-F]{64}$/.test(productHash)) {
+        return NextResponse.json(
+            { error: "demo product hash not configured or invalid" },
+            { status: 500 }
+        );
+    }
+
+    // Sign the scan challenge here, server-side, using the demo secret that
+    // already lives in server env — the raw key never leaves this process.
+    // Only the resulting signature (safe to publish, like any signed
+    // message) goes back to the browser.
+    const nonce = ethers.utils.hexlify(ethers.utils.randomBytes(32));
+    const challenge = AUTH_MESSAGE + ":" + productHash + ":" + nonce;
+
+    let signature;
+    try {
+        const wallet = new ethers.Wallet(secret);
+        signature = await wallet.signMessage(challenge);
+    } catch (_error) {
+        return NextResponse.json(
+            { error: "demo scan secret is not a valid EVM private key" },
+            { status: 500 }
+        );
+    }
+
     return NextResponse.json({
         productHash,
         signer,
-        secret,
-        hasSecret: Boolean(secret),
+        signature,
+        nonce,
         source
     });
 }
