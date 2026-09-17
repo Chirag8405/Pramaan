@@ -17,7 +17,7 @@ import {
   isVerifiedArtisan,
   mintProductTwin,
   registerProduct,
-  verifyProduct
+  verifyCraftImage
 } from "../../src/utils/contract";
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
@@ -82,6 +82,10 @@ export default function RegisterProductPage() {
   const [productImage, setProductImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [productHash, setProductHash] = useState("");
+  const [aiChecking, setAiChecking] = useState(false);
+  const [aiScore, setAiScore] = useState(null);
+  const [aiReason, setAiReason] = useState("");
+  const [aiError, setAiError] = useState("");
   const [statusText, setStatusText] = useState("");
   const [stepProgress, setStepProgress] = useState("");
   const [loading, setLoading] = useState(false);
@@ -172,11 +176,33 @@ export default function RegisterProductPage() {
     };
   }, []);
 
+  async function runAiCheck(file) {
+    setAiChecking(true);
+    setAiScore(null);
+    setAiReason("");
+    setAiError("");
+
+    try {
+      const result = await verifyCraftImage(file);
+      setAiScore(Number(result?.terroir_score));
+      setAiReason(String(result?.reason || ""));
+    } catch (error) {
+      const message = error?.message || "Could not run the AI authenticity check.";
+      setAiError(message.trim().replace(/\.+$/, ""));
+    } finally {
+      setAiChecking(false);
+    }
+  }
+
   async function onImageChange(event) {
     const file = event.target.files?.[0] || null;
     setProductImage(file);
     setProductHash("");
     setSuccess(null);
+    setAiChecking(false);
+    setAiScore(null);
+    setAiReason("");
+    setAiError("");
 
     if (!file) {
       if (previewUrl) {
@@ -198,6 +224,8 @@ export default function RegisterProductPage() {
     } catch (error) {
       setStatusText(error?.message || "Could not hash selected file.");
     }
+
+    await runAiCheck(file);
   }
 
   function getTruncatedHash(hash) {
@@ -230,6 +258,33 @@ export default function RegisterProductPage() {
 
     if (!productHash) {
       setStatusText("Product hash not ready yet.");
+      return;
+    }
+
+    if (aiChecking) {
+      setStatusText("AI authenticity check is still running. Please wait.");
+      return;
+    }
+
+    if (aiError) {
+      setStatusText("Could not run the AI authenticity check: " + aiError + ". Re-upload the image to retry.");
+      return;
+    }
+
+    if (typeof aiScore !== "number" || Number.isNaN(aiScore)) {
+      setStatusText("Upload a product image and wait for the AI authenticity check to complete.");
+      return;
+    }
+
+    if (aiScore < 70) {
+      const trimmedReason = aiReason.trim().replace(/\.+$/, "");
+      setStatusText(
+        "AI authenticity check scored this image " +
+        aiScore +
+        "/100" +
+        (trimmedReason ? " — " + trimmedReason : "") +
+        ". Minimum 70 required; registration is blocked."
+      );
       return;
     }
 
@@ -305,19 +360,15 @@ export default function RegisterProductPage() {
       setStepProgress("Step 4/5: Minting Product NFT twin...");
 
       const metadataUrl = getIPFSUrl(metadataCid);
-      let mintTerroirScore = 100;
-      try {
-        // Best-effort read; do not fail mint flow if RPC/state indexing lags.
-        const verification = await verifyProduct(productHash);
-        mintTerroirScore = Number(verification?.terroir || 100);
-      } catch (_verifyError) {
-        mintTerroirScore = 100;
-      }
 
+      // aiScore was already validated (>= 70) above, before any IPFS/on-chain
+      // calls were made — this is the real AI vision score, not a custody
+      // read, matching what ProductNFT.mintProduct's terroirScore param
+      // actually gates on.
       const mintResult = await mintProductTwin(
         walletAddress,
         metadataUrl,
-        mintTerroirScore,
+        aiScore,
         metadataCid
       );
 
@@ -354,6 +405,7 @@ export default function RegisterProductPage() {
         imageUrl,
         metadataUrl,
         mintedTokenId,
+        mintedTerroirScore: aiScore,
         provenanceSigner: signerAddress || walletAddress,
         batchId: autoBatch.batchId,
         lotNumber: autoBatch.lotNumber,
@@ -379,7 +431,7 @@ export default function RegisterProductPage() {
             handlers: [],
             handlerVerified: []
           },
-          terroir: 100,
+          terroir: aiScore,
           mintedTokenId: mintedTokenId || ""
         };
         window.sessionStorage.setItem("pramaan:lastRegisteredProduct", JSON.stringify(snapshot));
@@ -429,6 +481,16 @@ export default function RegisterProductPage() {
       </section>
     );
   }
+
+  const trimmedAiReason = aiReason.trim().replace(/\.+$/, "");
+
+  const registerDisabled =
+    loading ||
+    aiChecking ||
+    Boolean(aiError) ||
+    typeof aiScore !== "number" ||
+    Number.isNaN(aiScore) ||
+    aiScore < 70;
 
   return (
     <section className="grid gap-6">
@@ -538,7 +600,33 @@ export default function RegisterProductPage() {
               </p>
             )}
 
-            <Button type="submit" disabled={loading} className="w-fit">
+            {aiChecking && (
+              <div className="flex items-center gap-2">
+                <div className="spinner" />
+                <span className="text-[#355]">Checking craft authenticity...</span>
+              </div>
+            )}
+
+            {aiError && (
+              <div className="rounded-xl border border-[#e9bcbc] bg-[#fff5f5] px-3 py-2 font-semibold text-[#8a1f1f]">
+                Could not run the AI authenticity check: {aiError}. Re-upload the image to retry.
+              </div>
+            )}
+
+            {typeof aiScore === "number" && !aiChecking && !aiError && (
+              <div className="grid gap-2">
+                <TerritorScore score={aiScore} />
+                {aiReason && <p className="m-0 text-sm text-[#49665e]">{aiReason}</p>}
+                {aiScore < 70 && (
+                  <div className="rounded-xl border border-[#e9bcbc] bg-[#fff5f5] px-3 py-2 font-semibold text-[#8a1f1f]">
+                    AI authenticity check scored this image {aiScore}/100{trimmedAiReason ? " — " + trimmedAiReason : ""}.
+                    Minimum 70 required — registration blocked.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button type="submit" disabled={registerDisabled} className="w-fit">
               {loading ? "Processing..." : "Register Product"}
             </Button>
 
@@ -623,11 +711,28 @@ export default function RegisterProductPage() {
             </div>
 
             <div style={{ maxWidth: 340 }}>
-              <TerritorScore score={100} />
+              <TerritorScore score={success.mintedTerroirScore} />
             </div>
           </CardContent>
         </Card>
       )}
+
+      <style jsx>{`
+        .spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid #d5ebe3;
+          border-top-color: #1d9e75;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </section>
   );
 }
