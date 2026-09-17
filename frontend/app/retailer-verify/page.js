@@ -9,6 +9,8 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 
+const AUTH_MESSAGE = "Authentic Pramaan Scan";
+
 export default function RetailerVerifyPage() {
     const [baseUrl, setBaseUrl] = useState("");
     const [productHash, setProductHash] = useState(process.env.NEXT_PUBLIC_DEMO_PRODUCT_HASH || "");
@@ -18,6 +20,9 @@ export default function RetailerVerifyPage() {
     const [demoSource, setDemoSource] = useState("");
     const [expectedSigner, setExpectedSigner] = useState("");
     const [scanNonce, setScanNonce] = useState("");
+    const [signature, setSignature] = useState("");
+    const [signedChallenge, setSignedChallenge] = useState("");
+    const [signStatus, setSignStatus] = useState("");
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -54,8 +59,69 @@ export default function RetailerVerifyPage() {
         }
     }, [normalizedSecret]);
 
+    // The QR/URL must never carry the raw private key. Instead we sign a
+    // challenge over (hash, nonce) locally, in this tab, the moment a usable
+    // key and both those values are present, and only the resulting
+    // signature is ever put in the URL. signedChallenge records which
+    // exact challenge `signature` was produced for, so a nonce/hash edit
+    // after signing invalidates the old signature instead of silently
+    // shipping a QR that no longer verifies.
+    const challenge = useMemo(() => {
+        if (!trimmedHash || !scanNonce) {
+            return "";
+        }
+        return AUTH_MESSAGE + ":" + trimmedHash + ":" + scanNonce;
+    }, [trimmedHash, scanNonce]);
+
+    const signatureValid = Boolean(signature && challenge && signedChallenge === challenge);
+
+    useEffect(() => {
+        if (!normalizedSecret || !secretSigner || !challenge) {
+            return;
+        }
+        if (signedChallenge === challenge && signature) {
+            return;
+        }
+
+        let cancelled = false;
+
+        async function signChallenge() {
+            setSignStatus("Signing challenge locally...");
+            try {
+                const wallet = new ethers.Wallet(normalizedSecret);
+                const sig = await wallet.signMessage(challenge);
+                if (!cancelled) {
+                    setSignature(sig);
+                    setSignedChallenge(challenge);
+                    setSignStatus("");
+                }
+            } catch (_error) {
+                if (!cancelled) {
+                    setSignStatus("Could not sign challenge with provided secret.");
+                }
+            }
+        }
+
+        signChallenge();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [normalizedSecret, secretSigner, challenge, signedChallenge, signature]);
+
+    const recoveredSigner = useMemo(() => {
+        if (!signatureValid) {
+            return "";
+        }
+        try {
+            return ethers.utils.verifyMessage(challenge, signature);
+        } catch (_error) {
+            return "";
+        }
+    }, [signatureValid, challenge, signature]);
+
     const verifyUrl = useMemo(() => {
-        if (!baseUrl || !trimmedHash || !normalizedSecret || !scanNonce) {
+        if (!baseUrl || !trimmedHash || !scanNonce || !signatureValid) {
             return "";
         }
 
@@ -64,12 +130,12 @@ export default function RetailerVerifyPage() {
             normalizedBase +
             "/verify/" +
             encodeURIComponent(trimmedHash) +
-            "?secret=" +
-            encodeURIComponent(normalizedSecret) +
+            "?sig=" +
+            encodeURIComponent(signature) +
             "&nonce=" +
             encodeURIComponent(scanNonce)
         );
-    }, [baseUrl, trimmedHash, normalizedSecret, scanNonce]);
+    }, [baseUrl, trimmedHash, scanNonce, signature, signatureValid]);
 
     function regenerateNonce() {
         setScanNonce(ethers.utils.hexlify(ethers.utils.randomBytes(32)));
@@ -105,18 +171,27 @@ export default function RetailerVerifyPage() {
                 setProductHash(payload.productHash);
             }
 
-            if (payload?.secret) {
-                setSecret(payload.secret);
+            if (payload?.nonce) {
+                setScanNonce(payload.nonce);
             }
 
             if (payload?.signer) {
                 setExpectedSigner(payload.signer);
             }
 
+            // The server already signed the challenge with DEMO_SCAN_SECRET and
+            // never sent the raw key — accept the signature as-is, tagged with
+            // the exact challenge it was produced for (built from the payload's
+            // own hash/nonce, not local state, which may not have re-rendered yet).
+            if (payload?.productHash && payload?.nonce && payload?.signature) {
+                setSignature(payload.signature);
+                setSignedChallenge(AUTH_MESSAGE + ":" + payload.productHash + ":" + payload.nonce);
+            }
+
             setDemoSource(payload?.source || "env");
 
-            if (!payload?.secret) {
-                setCopyStatus("Demo hash loaded, but secret is missing. Set DEMO_SCAN_SECRET in frontend/.env.local.");
+            if (!payload?.signature) {
+                setCopyStatus("Demo hash loaded, but signature is missing. Set DEMO_SCAN_SECRET in frontend/.env.local.");
             } else {
                 setCopyStatus("Demo values loaded. QR is ready.");
             }
@@ -263,9 +338,17 @@ export default function RetailerVerifyPage() {
                         <p className="m-0 text-sm text-[#8a1f1f]">Secret format is invalid. Use a valid EVM private key.</p>
                     )}
 
-                    {expectedSigner && secretSigner && (
+                    {signStatus && <p className="m-0 text-sm text-[#355]">{signStatus}</p>}
+
+                    {challenge && signature && !signatureValid && (
+                        <p className="m-0 text-sm text-[#8a5b09]">
+                            Hash or nonce changed since this QR was signed. Reload demo data or re-enter the secret to sign again.
+                        </p>
+                    )}
+
+                    {expectedSigner && recoveredSigner && (
                         <p className="m-0 text-sm text-[#355]">
-                            Signer check: {secretSigner.toLowerCase() === expectedSigner.toLowerCase() ? "Matched" : "Not matched"}
+                            Signer check: {recoveredSigner.toLowerCase() === expectedSigner.toLowerCase() ? "Matched" : "Not matched"}
                         </p>
                     )}
 
