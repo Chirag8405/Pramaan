@@ -11,7 +11,7 @@ import { CHAIN_ID, PRODUCT_REGISTRY_ADDRESS } from "../../../src/utils/constants
 const AUTH_MESSAGE = "Authentic Pramaan Scan";
 const ZERO_HASH = "0x" + "00".repeat(32);
 
-function normalizeSecretKey(value) {
+function normalizeHexParam(value) {
     const raw = String(value || "").trim();
     const unquoted = raw.replace(/^['\"]|['\"]$/g, "").trim();
     if (!unquoted) {
@@ -81,7 +81,7 @@ export default function ProductHashVerifyPage() {
         return Array.isArray(raw) ? raw[0] : raw || "";
     }, [params]);
 
-    const secret = normalizeSecretKey(searchParams.get("secret") || "");
+    const signatureFromUrl = normalizeHexParam(searchParams.get("sig") || "");
     const nonceFromUrl = normalizeNonce(searchParams.get("nonce") || "");
 
     const [loading, setLoading] = useState(true);
@@ -137,14 +137,12 @@ export default function ProductHashVerifyPage() {
                     deviceSignatureMatches = recoveredFromDeviceSignature.toLowerCase() === provenanceSigner.toLowerCase();
                 }
 
-                let recoveredFromSecret = ethers.constants.AddressZero;
-                let secretMatches = false;
-                if (secret) {
-                    const wallet = new ethers.Wallet(secret);
+                let recoveredFromSignature = ethers.constants.AddressZero;
+                let signatureMatches = false;
+                if (signatureFromUrl) {
                     const challenge = AUTH_MESSAGE + ":" + productHash + ":" + activeNonce;
-                    const challengeSignature = await wallet.signMessage(challenge);
-                    recoveredFromSecret = ethers.utils.verifyMessage(challenge, challengeSignature);
-                    secretMatches = recoveredFromSecret.toLowerCase() === provenanceSigner.toLowerCase();
+                    recoveredFromSignature = ethers.utils.verifyMessage(challenge, signatureFromUrl);
+                    signatureMatches = recoveredFromSignature.toLowerCase() === provenanceSigner.toLowerCase();
                 }
 
                 const verified = Boolean(deviceSignatureMatches && hasMetadataHash);
@@ -163,11 +161,11 @@ export default function ProductHashVerifyPage() {
                         hasMetadataHash,
                         hasDeviceSignature,
                         deviceSignatureMatches,
-                        secretMatches,
-                        secretProvided: Boolean(secret),
+                        signatureMatches,
+                        signatureProvided: Boolean(signatureFromUrl),
                         provenanceSigner,
                         recoveredFromDeviceSignature,
-                        recoveredFromSecret,
+                        recoveredFromSignature,
                         productName: record.productName,
                         giTag: record.giTag,
                         metadataHash: record.metadataHash
@@ -189,7 +187,7 @@ export default function ProductHashVerifyPage() {
         return () => {
             cancelled = true;
         };
-    }, [productHash, secret, nonceFromUrl]);
+    }, [productHash, signatureFromUrl, nonceFromUrl]);
 
     async function onCheckpointNonce() {
         if (!details || !scanNonce) {
@@ -233,7 +231,7 @@ export default function ProductHashVerifyPage() {
                     <p className="m-0 text-xs uppercase tracking-[0.28em] text-emerald-300/80">Pramaan Hardware Handshake</p>
                     <h1 className="mt-2 text-4xl font-black tracking-tight md:text-6xl">Scan Integrity Check</h1>
                     <p className="mt-3 text-slate-300">
-                        We compare a recovered signer from your secret with the on-chain provenance signer for this product.
+                        We compare a recovered signer from the QR's signature with the on-chain provenance signer for this product.
                     </p>
                 </div>
 
@@ -316,9 +314,9 @@ export default function ProductHashVerifyPage() {
                             <p className="m-0 mt-2 text-sm text-slate-300">
                                 Pre-check: {checkpointState.checkedUsed ? "Nonce already seen (possible replay)." : "Nonce not seen yet."}
                             </p>
-                            {details.secretProvided && (
+                            {details.signatureProvided && (
                                 <p className="m-0 mt-1 text-sm text-slate-300">
-                                    QR secret challenge: {details.secretMatches ? "matched provenance signer" : "did not match provenance signer"}
+                                    QR signature challenge: {details.signatureMatches ? "matched provenance signer" : "did not match provenance signer"}
                                 </p>
                             )}
                             <div className="mt-3 flex flex-wrap items-center gap-3">
