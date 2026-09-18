@@ -70,7 +70,7 @@ export default function TerritorScore({ score }) {
               />
             </div>
             <div className="text-[1.2rem] font-bold" style={{ color: meta.color }}>{meta.status}</div>
-            <Badge variant="neutral" className="w-fit">Live Integrity Signal</Badge>
+            <Badge variant="neutral" className="w-fit">Updates as the product changes hands</Badge>
           </div>
         </div>
 
