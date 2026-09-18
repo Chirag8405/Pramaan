@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { connectWallet, getConnectedAddressIfAvailable } from "../src/utils/contract";
@@ -124,6 +125,68 @@ function WalletStatus() {
     );
 }
 
+function ScrollableNav({ pathname }) {
+    const navRef = useRef(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    useEffect(() => {
+        const el = navRef.current;
+        if (!el) {
+            return;
+        }
+
+        function updateFades() {
+            setCanScrollLeft(el.scrollLeft > 4);
+            setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+        }
+
+        updateFades();
+        el.addEventListener("scroll", updateFades, { passive: true });
+        window.addEventListener("resize", updateFades);
+
+        return () => {
+            el.removeEventListener("scroll", updateFades);
+            window.removeEventListener("resize", updateFades);
+        };
+    }, []);
+
+    return (
+        <div className="relative min-w-0">
+            <nav ref={navRef} className="flex items-center gap-1 overflow-x-auto">
+                {navItems.map((item) => {
+                    const active = pathname === item.href;
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            aria-current={active ? "page" : undefined}
+                            className={
+                                "shrink-0 rounded-md border-b-2 px-3 py-2 text-sm font-medium no-underline transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] " +
+                                (active
+                                    ? "border-[#34d399] bg-[#131917] text-[#f3f6f4]"
+                                    : "border-transparent text-[#aebbb5] hover:bg-[#131917] hover:text-[#f3f6f4]")
+                            }
+                        >
+                            {item.label}
+                        </Link>
+                    );
+                })}
+            </nav>
+            {canScrollLeft && (
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-start bg-gradient-to-r from-[#0b0f0e] to-transparent">
+                    <ChevronLeft size={14} className="text-[#34d399]" />
+                </div>
+            )}
+            {canScrollRight && (
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-end bg-gradient-to-l from-[#0b0f0e] to-transparent">
+                    <ChevronRight size={14} className="text-[#34d399]" />
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function SiteHeader() {
     const pathname = usePathname();
 
@@ -138,26 +201,7 @@ export default function SiteHeader() {
                         >
                             Pramaan
                         </Link>
-                        <nav className="flex items-center gap-1 overflow-x-auto">
-                            {navItems.map((item) => {
-                                const active = pathname === item.href;
-                                return (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        aria-current={active ? "page" : undefined}
-                                        className={
-                                            "shrink-0 rounded-md border-b-2 px-3 py-2 text-sm font-medium no-underline transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] " +
-                                            (active
-                                                ? "border-[#34d399] bg-[#131917] text-[#f3f6f4]"
-                                                : "border-transparent text-[#aebbb5] hover:bg-[#131917] hover:text-[#f3f6f4]")
-                                        }
-                                    >
-                                        {item.label}
-                                    </Link>
-                                );
-                            })}
-                        </nav>
+                        <ScrollableNav pathname={pathname} />
                     </div>
 
                     <WalletStatus />
