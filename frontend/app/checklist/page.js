@@ -6,8 +6,13 @@ const checklistItems = [
   { label: "Artisan Flow", href: "/artisan" },
   { label: "Register Product", href: "/register-product" },
   { label: "Transfer", href: "/transfer" },
-  { label: "Verify", href: "/verify" },
-  { label: "Attack Demo", href: "/verify" },
+  { label: "Retailer Verify", href: "/retailer-verify", note: "Generate a signed demo QR and scan it at counter." },
+  { label: "Verify", href: "/verify", note: "Look up a product hash and see its trust trail." },
+  {
+    label: "Attack Demo: Nonce Replay",
+    href: "/verify",
+    note: "On the Verify page, checkpoint the same hash + scan nonce twice — the second checkpoint reports \"Replay detected,\" demonstrating the anti-replay protection."
+  },
   { label: "Live Monitor", href: "/monitor" },
   { label: "Evidence", href: "/evidence" }
 ];
@@ -28,7 +33,10 @@ export default function ChecklistPage() {
             <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
               <div className="flex items-center gap-3">
                 <Badge>{index + 1}</Badge>
-                <span className="font-semibold text-[#f3f6f4]">{item.label}</span>
+                <div className="grid gap-0.5">
+                  <span className="font-semibold text-[#f3f6f4]">{item.label}</span>
+                  {item.note && <span className="text-xs text-[#8a9891]">{item.note}</span>}
+                </div>
               </div>
               <Link
                 href={item.href}
