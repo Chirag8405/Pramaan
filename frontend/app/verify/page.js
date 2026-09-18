@@ -51,6 +51,8 @@ const publicClient = createPublicClient({
   transport: http(RPC_URL)
 });
 
+const DEMO_PRODUCT_HASH = String(process.env.NEXT_PUBLIC_DEMO_PRODUCT_HASH || "").trim();
+
 async function resolveAssetUrls(cid) {
   const metadataUrl = getIPFSUrl(cid);
 
@@ -360,20 +362,57 @@ export default function VerifyPage() {
               required
               value={hash}
               onChange={(e) => setHash(e.target.value)}
-              placeholder="0x..."
+              placeholder="0x... (32-byte product hash)"
             />
-            <Input
-              suppressHydrationWarning
-              value={scanNonce}
-              onChange={(e) => setScanNonce(e.target.value)}
-              placeholder="Scan nonce (optional bytes32; auto-generated if empty)"
-            />
+            {DEMO_PRODUCT_HASH && (
+              <button
+                type="button"
+                onClick={() => setHash(DEMO_PRODUCT_HASH)}
+                className="w-fit text-xs font-semibold text-[#34d399] hover:text-[#4ade80] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] rounded"
+              >
+                Use example product hash
+              </button>
+            )}
+            <div className="grid gap-1">
+              <Input
+                suppressHydrationWarning
+                value={scanNonce}
+                onChange={(e) => setScanNonce(e.target.value)}
+                placeholder="Scan nonce (optional bytes32; auto-generated if empty)"
+              />
+              <p className="m-0 text-xs text-[#8a9891]">
+                A one-time value tied to this scan, used to detect replay — leave blank to auto-generate one.
+              </p>
+            </div>
             <Button suppressHydrationWarning disabled={loading} type="submit" className="w-fit">
               {loading ? "Verifying..." : "Verify Product"}
             </Button>
           </form>
         </CardContent>
       </Card>
+
+      {resultType === RESULT.NONE && !resultData && (
+        <Card className="max-w-3xl">
+          <CardContent className="grid gap-2 pt-6 text-sm text-[#aebbb5]">
+            <p className="m-0 font-semibold text-[#f3f6f4]">New here?</p>
+            <p className="m-0">
+              Paste the product hash (0x + 64 hex characters) shown after registering a product, or scan a
+              retailer QR from the{" "}
+              <Link href="/retailer-verify" className="font-semibold text-[#34d399] no-underline">
+                Retailer Verify
+              </Link>{" "}
+              page to jump straight here.
+            </p>
+            <p className="m-0">
+              Don&apos;t have a product hash yet? {" "}
+              <Link href="/register-product" className="font-semibold text-[#34d399] no-underline">
+                Register a product
+              </Link>{" "}
+              first, then come back to verify it.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {status && <p className="m-0 text-[#aebbb5]">{status}</p>}
 
