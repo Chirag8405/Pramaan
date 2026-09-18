@@ -1,6 +1,6 @@
 # Pramaan
 
-Pramaan is a Sepolia-based provenance and trust platform for GI/craft products. It combines artisan identity verification, AI-assisted authenticity gating, on-chain product lifecycle tracking, dynamic royalties, an escrow marketplace, and judge-ready monitoring/evidence tooling.
+Pramaan is a Sepolia-based provenance and trust platform for GI/craft products. It combines artisan identity verification, AI-assisted authenticity gating, on-chain product lifecycle tracking, dynamic royalties, an escrow marketplace, and internal monitoring/evidence tooling.
 
 > **Glossary — "terroir score":** borrowed from wine/agriculture, where *terroir* describes how a product's origin and handling shape its authenticity. Here it's an AI-assessed 0–100 authenticity score (not a typo for "terror") gating product registration and NFT minting.
 
@@ -78,20 +78,23 @@ Implemented:
 ## 2) Frontend Application
 
 Main implemented user flows:
+- `/`: homepage with a "Get Started" CTA that routes by wallet/verification state — no wallet or unverified goes to `/artisan`, an already-verified artisan goes straight to `/register-product`.
 - `/artisan`: wallet connect, trust badges, Aadhaar/validator actions, artisan registration, projected earnings panel.
 - `/register-product`: image upload, hashing, AI verification call, on-chain registration, QR generation, certificate view.
-- `/verify`: product lookup, trust status, handler chain timeline, terroir status, anti-replay nonce checkpoint.
-- `/transfer`: ownership transfer, tapered royalty preview, projected terroir impact.
+- `/verify`: product lookup, trust status, custody history, terroir status, anti-replay nonce checkpoint; raw ledger fields (record hash, replay-protection nonce) are tucked behind a "Show technical details" toggle so the default view stays plain-language.
+- `/retailer-verify`: counter-scan flow only — reads a signed QR/hash and verifies it against the chain.
+- `/transfer`: escrow-only ownership transfer (create escrow → seller marks shipped → buyer confirms received), with a live royalty preview sourced from the contract's `previewSettlement`. The older direct-transfer-with-manual-royalty-calculator UI still exists in code but is hidden behind an `ESCROW_ONLY_MODE` flag.
 
-Operations/demo pages:
+Operations/internal tooling:
 - `/monitor`: live Sepolia event timeline (`ProductRegistered` + `ProductTransferred`).
-- `/checklist`: judge-demo navigation order.
+- `/checklist`: quick links to every flow, plus a walkthrough of the anti-replay nonce-checkpoint demonstration.
 - `/evidence`: local evidence collector with markdown export.
 
 UI system implemented:
-- Tailwind + shadcn-style component primitives.
-- Responsive layout and modern app shell.
-- Light/dark theming via `next-themes`.
+- Tailwind + shadcn-style component primitives (`Card`, `Button`, `Badge`, `Input`, `Select`).
+- Dark-only design token system (canvas/surface background scale, brand green accent, semantic success/warning/danger pairs) — no light/dark toggle.
+- Header navigation (`SiteHeader.js`) groups primary links by audience (Makers: Artisan/Register Product; Market: Retailer Verify/Verify/Transfer) as two segmented panes, with a shared passive wallet-address hook and a soft readiness indicator on Register Product for connected-but-unverified wallets.
+- WCAG AA-checked placeholder/text contrast.
 
 ## 3) AI Verification API
 
@@ -223,6 +226,7 @@ npm run build
 - The AI verification route (`/api/verify-craft`) returns an error if no `OPENAI_API_KEY`/`GEMINI_API_KEY` is configured — there is no offline fallback scorer.
 - `EscrowMarketplace.checkExpiry`'s Shipped-deadline branch routes to `Disputed` for owner arbitration rather than resolving automatically (a deliberate design choice — see [Recent Fixes](#recent-fixes-and-engineering-history)).
 - The AI authenticity check (`/api/verify-craft`) verifies that an uploaded image visually depicts craft-in-progress (an artisan actively working, tools, workshop context) — it does not verify that the artisan captured the photo themselves. A plausible-looking photo of someone else's craft process (sourced from the web, stock photography, etc.) would pass identically to a genuine photo. No liveness/provenance-of-capture check (EXIF validation, reverse image search, live-capture-only enforcement, or a challenge-overlay requirement) is implemented.
+- `/checklist` still frames itself as a presentation aid ("Open each flow directly while presenting to judges") and its Retailer Verify entry still references generating a demo QR — a feature that was removed from `/retailer-verify` (see Recent Fixes). Not yet updated to match the post-hackathon real-user redesign.
 
 ## Recent Fixes and Engineering History
 
@@ -232,6 +236,10 @@ This section documents real fixes found and applied while building out test cove
 - **DynamicRoyalty taper-seam bug found via testing, then fixed.** The precomputed royalty table originally covered only the first 10 resales; resales 11+ fell back to a `4000/sqrt(transferId)` formula that, at the seam, paid a *higher* royalty (1333 bps) than resale 10 (1200 bps) — an increase, contradicting the contract's own "decaying royalty" design. The table was extended from 10 to 15 entries so it fully covers the flat plateau of the formula in that range and hands off smoothly at resale 16. Verified monotonically non-increasing across the full curve by test.
 - **EscrowMarketplace `checkExpiry` added.** Two states could previously freeze indefinitely if a party forgot to act: `Created` past its shipping deadline (buyer had to remember to call `cancelExpired`) and `Shipped` past its confirmation deadline (no recovery path existed at all). `checkExpiry` is a new, permissionless function callable by anyone once a deadline passes — it refunds the buyer for an expired `Created` escrow (reusing the existing refund path), and routes an expired `Shipped` escrow into `Disputed` for owner arbitration rather than resolving the outcome unilaterally.
 - **Private-key-exposure vulnerability found and fixed.** `frontend/app/api/demo-qr/route.js` had a fallback chain that, if no demo secret env var was set, read `blockchain/.env` directly off disk and returned its `PRIVATE_KEY` value — the real Sepolia deployer key — in a public API response. The route no longer reads any `.env` file off disk; if no demo secret is configured it now fails closed with a `500`. The previously-exposed deployer key was rotated and all five contracts were redeployed under the new key. (This route, and the retailer-side demo QR generator it backed, were later removed entirely as part of the post-hackathon real-user redesign — see below.)
+- **Post-hackathon real-user redesign.** Once the hackathon ended, the app was re-audited from a real-user perspective instead of a judge-demo one: replaced the light theme with a dark-only design token system and rebuilt the header navigation (audience-grouped segmented nav, passive wallet-address hook shared across the header instead of each consumer polling independently, a soft readiness indicator instead of a hard redirect). Removed demo-only artifacts and jargon across the app — a fake-artisan-demo button on `/artisan`, the demo QR generator on `/retailer-verify` (with the private-key-exposure route it depended on), a "Terroir Score Demo" card and raw ledger fields (now behind a "Show technical details" toggle) on `/verify`, and blockchain jargon on `/register-product` — and replaced a silent `router.replace` auto-redirect on `/artisan` with an explicit banner, plus made the homepage `<h1>` a real heading and its "Get Started" CTA route by actual wallet/verification state instead of always pointing at the same page.
+- **`/transfer` token auto-lookup fixed (`eth_getLogs` → Alchemy NFT API).** `findLatestMintedTokenIdByRecipient` scanned `Transfer`/`ProductMinted` logs with a 20,000-block `eth_getLogs` window, but Alchemy's free tier caps `eth_getLogs` at 10 blocks — every request failed with a 400 and the loop silently retried up to 25 times before giving up with no visible error. Replaced with Alchemy's `getNFTsForOwner` NFT API (current ownership state, no block-range limit), deriving the NFT API base URL from the existing RPC URL so no extra env var is needed.
+- **`/transfer` Create Escrow raw-error leak fixed.** A reported crash ("Cannot read properties of undefined (reading 'toString')" shown as literal text in the UI) traced back to the escrow flow's error-message pipeline having no catch-all: any unrecognized JS runtime error fell through to being displayed verbatim instead of a friendly message. Added a raw-JS-error pattern check that substitutes a friendly fallback, tightened the token-ID/amount precondition checks from truthiness to actual validity, and wrapped a previously-unguarded wallet-address lookup in a try/catch.
+- **Concurrent wallet-connect race fixed.** Multiple components independently calling the wallet-connect flow at once could trigger MetaMask's "already processing eth_requestAccounts" error, which surfaced as raw error text. Fixed with an in-flight-request singleton so concurrent callers share one pending connection instead of each firing their own.
 
 ## Notes
 
