@@ -7,6 +7,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { Select } from "../../components/ui/select";
 import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
 import { uploadToIPFS } from "../../src/utils/ipfs";
 import { connectWallet, getArtisan, isVerifiedArtisan, registerArtisan } from "../../src/utils/contract";
@@ -104,23 +105,23 @@ export default function ArtisanPage() {
   function getAnonStatusMeta(status) {
     if (status === "logged-in") {
       return {
-        bg: "#ddf9eb",
-        color: "#186d4c",
+        bg: "#0f2e22",
+        color: "#4ade80",
         label: "Anon Aadhaar proof verified locally"
       };
     }
 
     if (status === "logging-in") {
       return {
-        bg: "#fff1d1",
-        color: "#8a5b09",
+        bg: "#332408",
+        color: "#fbbf24",
         label: "Generating proof..."
       };
     }
 
     return {
-      bg: "#ffe9e9",
-      color: "#8a1f1f",
+      bg: "#3a1414",
+      color: "#f87171",
       label: "Proof not completed"
     };
   }
@@ -326,23 +327,23 @@ export default function ArtisanPage() {
 
     if (score >= 80) {
       return {
-        bg: "#ddf9eb",
-        color: "#186d4c",
+        bg: "#0f2e22",
+        color: "#4ade80",
         text: "Excellent craft signature detected"
       };
     }
 
     if (score >= 60) {
       return {
-        bg: "#fff1d1",
-        color: "#8a5b09",
+        bg: "#332408",
+        color: "#fbbf24",
         text: "Craft signature verified"
       };
     }
 
     return {
-      bg: "#ffe0e0",
-      color: "#8a1f1f",
+      bg: "#3a1414",
+      color: "#f87171",
       text: "Craft signature not detected — registration blocked"
     };
   }
@@ -526,8 +527,10 @@ export default function ArtisanPage() {
   if (!hydrated) {
     return (
       <section className="grid gap-4">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register as Artisan</h1>
-        <p className="m-0 text-[#49665e]">Loading secure verification...</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register as Artisan
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Loading secure verification...</p>
       </section>
     );
   }
@@ -535,8 +538,10 @@ export default function ArtisanPage() {
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register as Artisan</h1>
-        <p className="m-0 text-[#49665e]">Only submissions with craft score 60+ pass the on-chain gate.</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register as Artisan
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Only submissions with craft score 60+ pass the on-chain gate.</p>
       </div>
 
       <div>
@@ -559,7 +564,7 @@ export default function ArtisanPage() {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
 
-            <select
+            <Select
               required
               value={form.craft}
               onChange={(e) =>
@@ -569,14 +574,13 @@ export default function ArtisanPage() {
                   giRegion: giRegions[e.target.value] || ""
                 })
               }
-              className="flex h-11 w-full rounded-xl border border-[#cfe2db] bg-white px-3 py-2 text-sm text-[#1f2937] outline-none transition focus-visible:ring-2 focus-visible:ring-[#7fc2ac]"
             >
               {craftTypes.map((craftType) => (
                 <option key={craftType} value={craftType}>
                   {craftType}
                 </option>
               ))}
-            </select>
+            </Select>
 
             <Input
               required
@@ -585,9 +589,9 @@ export default function ArtisanPage() {
               readOnly
             />
 
-            <div className="grid gap-3 rounded-xl border border-[#d9ebe4] bg-[#f8fcfa] p-3">
+            <div className="grid gap-3 rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
               <div className="flex items-center justify-between">
-                <div className="font-semibold text-[#1f5b4b]">Anon Aadhaar Verification</div>
+                <div className="font-semibold text-[#f3f6f4]">Anon Aadhaar Verification</div>
                 <Badge variant="neutral">Required</Badge>
               </div>
               <div
@@ -597,7 +601,14 @@ export default function ArtisanPage() {
                 {anonStatusInfo.label}
               </div>
 
-              <LogInWithAnonAadhaar nullifierSeed={aadhaarNullifierSeed} fieldsToReveal={[]} />
+              <div className="grid gap-1.5">
+                <p className="m-0 text-xs text-[#8a9891]">
+                  Opens Anon Aadhaar&apos;s own verification window (third-party, keeps its own light styling).
+                </p>
+                <div className="w-fit rounded-lg bg-white p-1">
+                  <LogInWithAnonAadhaar nullifierSeed={aadhaarNullifierSeed} fieldsToReveal={[]} />
+                </div>
+              </div>
 
               <Button
                 type="button"
@@ -613,13 +624,13 @@ export default function ArtisanPage() {
               </Button>
 
               {aadhaarSyncedOnChain && (
-                <div className="rounded-lg border border-[#3e9f74] bg-[#dcf8e8] px-3 py-2 font-semibold text-[#1c664c]">
+                <div className="rounded-lg border border-[#1f4a38] bg-[#0f2e22] px-3 py-2 font-semibold text-[#4ade80]">
                   On-chain Aadhaar verification confirmed for connected wallet.
                 </div>
               )}
 
               {aadhaarConflict && (
-                <div className="rounded-lg border border-[#c94b4b] bg-[#fdeaea] px-3 py-2 font-semibold text-[#8a1f1f]">
+                <div className="rounded-lg border border-[#4a1f1f] bg-[#3a1414] px-3 py-2 font-semibold text-[#f87171]">
                   This Aadhaar identity has already verified a different wallet. Each Aadhaar identity may
                   verify only one wallet — connect the wallet you originally verified, or use a different
                   Aadhaar identity.
@@ -639,7 +650,7 @@ export default function ArtisanPage() {
                 <img
                   src={imagePreviewUrl}
                   alt="Craft preview"
-                  className="w-full max-w-md rounded-xl border border-[#d3e6df]"
+                  className="w-full max-w-md rounded-xl border border-[#26312b]"
                 />
               </div>
             )}
@@ -647,7 +658,7 @@ export default function ArtisanPage() {
             {isAnalyzing && (
               <div className="flex items-center gap-2">
                 <div className="spinner" />
-                <span className="text-[#355]">Analyzing craft authenticity...</span>
+                <span className="text-[#aebbb5]">Analyzing craft authenticity...</span>
               </div>
             )}
 
@@ -660,7 +671,12 @@ export default function ArtisanPage() {
               </div>
             )}
 
-            <Button type="button" variant="secondary" onClick={onTryFakeDemo} className="w-fit border-[#e9bcbc] bg-[#fff5f5] text-[#8a1f1f] hover:bg-[#ffecec]">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={onTryFakeDemo}
+              className="w-fit"
+            >
               Try Fake Artisan Demo
             </Button>
 
@@ -669,7 +685,7 @@ export default function ArtisanPage() {
             </Button>
 
             {stepProgress && (
-              <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
+              <div className="rounded-lg border border-dashed border-[#35443c] bg-[#1a211e] px-3 py-2 text-[#aebbb5]">
                 {stepProgress}
               </div>
             )}
@@ -677,15 +693,15 @@ export default function ArtisanPage() {
         </CardContent>
       </Card>
 
-      {message && <p className="m-0 text-[#355]">{message}</p>}
+      {message && <p className="m-0 text-[#aebbb5]">{message}</p>}
 
       {success && (
-        <Card className="max-w-3xl border-[#3e9f74] bg-[#dcf8e8] text-[#1c664c]">
+        <Card className="max-w-3xl border-[#1f4a38] bg-[#0f2e22] text-[#4ade80]">
           <CardContent className="grid gap-1 p-4">
             <div className="font-semibold">Soulbound Identity minted successfully.</div>
             <div>SBT Token ID: {success.tokenId}</div>
             {success.txUrl && (
-              <a href={success.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#116f4f]">
+              <a href={success.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#4ade80] underline">
                 View on Etherscan
               </a>
             )}
@@ -697,8 +713,8 @@ export default function ArtisanPage() {
         .spinner {
           width: 18px;
           height: 18px;
-          border: 2px solid #d5ebe3;
-          border-top-color: #1d9e75;
+          border: 2px solid #26312b;
+          border-top-color: #34d399;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
         }
