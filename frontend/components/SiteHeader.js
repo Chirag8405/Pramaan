@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { connectWallet, getConnectedAddress } from "../src/utils/contract";
+import { connectWallet, getConnectedAddressIfAvailable } from "../src/utils/contract";
 
 const navItems = [
     { href: "/artisan", label: "Artisan" },
@@ -36,18 +36,13 @@ function WalletStatus() {
     useEffect(() => {
         let mounted = true;
 
-        async function checkExisting() {
-            try {
-                const existing = await getConnectedAddress();
-                if (mounted && existing) {
-                    setAddress(existing);
-                }
-            } catch (_error) {
-                // Not connected yet — leave the Connect Wallet prompt showing.
-            }
+        // Passive only — must never prompt on mount. Every page that renders
+        // this header would otherwise fire its own connection request the
+        // instant it loads.
+        const existing = getConnectedAddressIfAvailable();
+        if (mounted && existing) {
+            setAddress(existing);
         }
-
-        checkExisting();
 
         if (typeof window !== "undefined" && window.ethereum?.on) {
             const onAccountsChanged = (accounts) => {
@@ -73,20 +68,28 @@ function WalletStatus() {
     }, []);
 
     async function onConnect() {
+        if (connecting) {
+            return;
+        }
+
         setConnecting(true);
         setError("");
         try {
             const result = await connectWallet();
             setAddress(result.address);
         } catch (err) {
-            setError(err?.shortMessage || err?.message || "Could not connect wallet.");
+            const raw = String(err?.shortMessage || err?.message || "");
+            const message = raw.toLowerCase().includes("already pending")
+                ? "A wallet request is already open — check MetaMask."
+                : raw || "Could not connect wallet.";
+            setError(message);
         } finally {
             setConnecting(false);
         }
     }
 
     return (
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="relative flex shrink-0 items-center gap-2">
             <Badge variant="neutral" className="hidden sm:inline-flex">
                 Sepolia
             </Badge>
@@ -100,7 +103,23 @@ function WalletStatus() {
                     {connecting ? "Connecting..." : "Connect Wallet"}
                 </Button>
             )}
-            {error && <span className="hidden text-xs text-[#f87171] md:inline">{error}</span>}
+
+            {error && (
+                <div
+                    role="alert"
+                    className="absolute right-0 top-[calc(100%+8px)] z-40 flex w-72 items-start gap-2 rounded-lg border border-[#4a1f1f] bg-[#3a1414] p-3 text-sm text-[#f87171] shadow-lg"
+                >
+                    <span className="flex-1">{error}</span>
+                    <button
+                        type="button"
+                        onClick={() => setError("")}
+                        aria-label="Dismiss"
+                        className="shrink-0 rounded text-[#f87171] hover:text-[#fca5a5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#3a1414]"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

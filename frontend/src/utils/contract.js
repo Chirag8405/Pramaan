@@ -185,26 +185,55 @@ async function ensureSepolia() {
     }
 }
 
+let pendingConnectRequest = null;
+
+// Wallet connection can be triggered from several places at once (a page's own
+// mount effect, the header's wallet indicator, a user click) — without this
+// guard, two near-simultaneous callers each fire their own eth_requestAccounts,
+// and MetaMask rejects the second with "Request of type 'wallet_requestPermissions'
+// already pending for origin ... Please wait." Sharing one in-flight promise
+// across all callers makes concurrent connectWallet() calls collapse into one.
 export async function connectWallet() {
-    ensureBrowserWallet();
+    if (pendingConnectRequest) {
+        return pendingConnectRequest;
+    }
 
-    await window.ethereum.request({ method: "eth_requestAccounts" });
+    pendingConnectRequest = (async () => {
+        ensureBrowserWallet();
 
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+
+        const account = getAccount(config);
+        if (!account.isConnected) {
+            await connect(config, { connector: injectedConnector });
+        }
+
+        await ensureSepolia();
+
+        const connected = getAccount(config);
+        const signer = await getWalletClient(config);
+
+        if (!connected.address || !signer) {
+            throw new Error("Failed to obtain wallet signer/address.");
+        }
+
+        return { signer, address: connected.address };
+    })();
+
+    try {
+        return await pendingConnectRequest;
+    } finally {
+        pendingConnectRequest = null;
+    }
+}
+
+// Passive check only — reads wagmi's cached connection state and never
+// prompts. Use this for on-mount "are we already connected?" checks; use
+// getConnectedAddress() below when the caller actually wants to prompt for
+// a connection if one doesn't exist yet.
+export function getConnectedAddressIfAvailable() {
     const account = getAccount(config);
-    if (!account.isConnected) {
-        await connect(config, { connector: injectedConnector });
-    }
-
-    await ensureSepolia();
-
-    const connected = getAccount(config);
-    const signer = await getWalletClient(config);
-
-    if (!connected.address || !signer) {
-        throw new Error("Failed to obtain wallet signer/address.");
-    }
-
-    return { signer, address: connected.address };
+    return account.isConnected && account.address ? account.address : "";
 }
 
 export async function getConnectedAddress() {
