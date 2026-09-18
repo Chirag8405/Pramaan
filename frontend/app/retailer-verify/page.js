@@ -14,7 +14,12 @@ const AUTH_MESSAGE = "Authentic Pramaan Scan";
 export default function RetailerVerifyPage() {
     const [baseUrl, setBaseUrl] = useState("");
     const [productHash, setProductHash] = useState(process.env.NEXT_PUBLIC_DEMO_PRODUCT_HASH || "");
-    const [secret, setSecret] = useState(process.env.NEXT_PUBLIC_DEMO_SCAN_SECRET || "");
+    // Deliberately not pre-filled from an env var: any NEXT_PUBLIC_-prefixed
+    // value ships inside the client bundle, so a raw private key must never
+    // be read into this field automatically. "Load Demo Data" below gets a
+    // working demo QR the safe way — signed server-side in /api/demo-qr,
+    // which only ever returns the resulting signature, never the key.
+    const [secret, setSecret] = useState("");
     const [copyStatus, setCopyStatus] = useState("");
     const [demoLoading, setDemoLoading] = useState(false);
     const [demoSource, setDemoSource] = useState("");

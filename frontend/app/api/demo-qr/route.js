@@ -38,11 +38,11 @@ export async function GET() {
         // Ignore missing demo file and fallback to environment variables.
     }
 
-    const secret = sanitizeSecret(
-        process.env.DEMO_SCAN_SECRET ||
-        process.env.NEXT_PUBLIC_DEMO_SCAN_SECRET ||
-        ""
-    );
+    // DEMO_SCAN_SECRET only — never a NEXT_PUBLIC_-prefixed fallback here.
+    // A NEXT_PUBLIC_ var ships inside the client bundle, so a private key
+    // set under that name would be publicly readable regardless of this
+    // route being server-side.
+    const secret = sanitizeSecret(process.env.DEMO_SCAN_SECRET || "");
 
     if (!secret) {
         return NextResponse.json(
