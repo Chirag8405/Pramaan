@@ -1111,7 +1111,7 @@ export default function TransferPage() {
         <CardHeader className="pb-2">
           <CardTitle>Escrow Transfer (Recommended)</CardTitle>
           <CardDescription>
-            Minimal demo flow: create escrow → mark shipped → confirm received.
+            Three steps: create escrow → mark shipped → confirm received.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1219,11 +1219,12 @@ export default function TransferPage() {
 
             {buyerShareLink && (
               <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 text-sm text-[#aebbb5]">
-                <p className="m-0 font-semibold">Buyer Confirm Link (share with friend)</p>
+                <p className="m-0 font-semibold">Buyer Confirm Link (share with the buyer)</p>
                 <p className="m-0 mt-1 break-all">{buyerShareLink}</p>
                 {(buyerShareLink.includes("localhost") || buyerShareLink.includes("127.0.0.1")) && (
                   <p className="m-0 mt-2 text-[#fbbf24]">
-                    This link is local to your PC. Set NEXT_PUBLIC_APP_URL in frontend/.env.local to your public URL.
+                    This link only opens on this computer right now — it won&apos;t work for someone else until the
+                    app is running somewhere both of you can reach.
                   </p>
                 )}
               </div>
