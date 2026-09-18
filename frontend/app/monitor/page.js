@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, formatEther, http, webSocket } from "viem";
 import { sepolia } from "viem/chains";
+import { Badge } from "../../components/ui/badge";
+import { Card, CardContent } from "../../components/ui/card";
 import { PRODUCT_ABI, PRODUCT_NFT_ABI } from "../../src/utils/abi";
 import {
   DYNAMIC_ROYALTY_ADDRESS,
@@ -586,84 +588,78 @@ export default function MonitorPage() {
   }, [httpClient, wsClient]);
 
   return (
-    <section style={{ display: "grid", gap: 14 }}>
-      <h1 style={{ margin: 0 }}>Live Monitor</h1>
-      <p style={{ margin: 0, color: "#466" }}>
-        Unified realtime lifecycle stream for registration, transfer, escrow, disputes, and settlement.
-      </p>
-      <p style={{ margin: 0, color: "#355", fontWeight: 700 }}>{status}</p>
-      {feeds.length > 0 && (
-        <p style={{ margin: 0, color: "#55756c" }}>
-          Active feeds: {feeds.join(", ")}
+    <section className="grid gap-6">
+      <div className="grid gap-2">
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Live Monitor
+        </h1>
+        <p className="m-0 text-[#aebbb5]">
+          Unified realtime lifecycle stream for registration, transfer, escrow, disputes, and settlement.
         </p>
-      )}
+        <p className="m-0 font-bold text-[#aebbb5]">{status}</p>
+        {feeds.length > 0 && (
+          <p className="m-0 text-[#8a9891]">Active feeds: {feeds.join(", ")}</p>
+        )}
+      </div>
 
-      <div style={{ display: "grid", gap: 10 }}>
+      <div className="grid gap-3">
         {events.length === 0 && (
-          <div style={cardStyle}>No events yet. Trigger register, transfer, escrow, or settlement flows to populate timeline.</div>
+          <Card>
+            <CardContent className="pt-6 text-[#aebbb5]">
+              No events yet. Trigger register, transfer, escrow, or settlement flows to populate timeline.
+            </CardContent>
+          </Card>
         )}
 
         {events.map((event) => (
-          <div key={event.id} style={cardStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-              <strong style={{ color: "#1f6d50" }}>{event.type}</strong>
-              <span style={{ color: "#55756c" }}>{event.time}</span>
-            </div>
-            <div style={{ color: "#55756c", fontSize: 13 }}>Source: {event.source}</div>
-            {event.hash && <div style={monoText}>Product Hash: {event.hash}</div>}
-            {typeof event.escrowId === "number" && <div style={{ color: "#355" }}>Escrow ID: {event.escrowId}</div>}
-            {typeof event.tokenId === "number" && <div style={{ color: "#355" }}>Token ID: {event.tokenId}</div>}
-            {event.from && <div style={monoText}>From: {event.from}</div>}
-            {event.to && <div style={monoText}>To: {event.to}</div>}
-            {event.buyer && <div style={monoText}>Buyer: {event.buyer}</div>}
-            {event.seller && <div style={monoText}>Seller: {event.seller}</div>}
-            {event.raisedBy && <div style={monoText}>Raised By: {event.raisedBy}</div>}
-            {event.artisan && <div style={monoText}>Artisan: {event.artisan}</div>}
-            {event.signer && <div style={monoText}>Signer: {event.signer}</div>}
-            {event.scanner && <div style={monoText}>Scanner: {event.scanner}</div>}
-            {event.metadataHash && <div style={monoText}>Metadata Hash: {event.metadataHash}</div>}
-            {event.nonce && <div style={monoText}>Nonce: {event.nonce}</div>}
-            {typeof event.count === "number" && <div style={{ color: "#355" }}>Transfer Count: {event.count}</div>}
-            {typeof event.transferId === "number" && <div style={{ color: "#355" }}>Transfer ID: {event.transferId}</div>}
-            {typeof event.replayed === "boolean" && (
-              <div style={{ color: "#355" }}>Replay: {event.replayed ? "Detected" : "Fresh nonce"}</div>
-            )}
-            {event.salePriceEth && <div style={{ color: "#355" }}>Sale Price: {event.salePriceEth} ETH</div>}
-            {event.refundEth && <div style={{ color: "#355" }}>Refund: {event.refundEth} ETH</div>}
-            {event.artisanAmountEth && <div style={{ color: "#355" }}>Artisan Amount: {event.artisanAmountEth} ETH</div>}
-            {event.sellerAmountEth && <div style={{ color: "#355" }}>Seller Amount: {event.sellerAmountEth} ETH</div>}
-            {typeof event.sellerWins === "boolean" && (
-              <div style={{ color: "#355" }}>Resolution: {event.sellerWins ? "Seller wins" : "Buyer wins"}</div>
-            )}
-            {event.reason && <div style={{ color: "#355" }}>Reason: {event.reason}</div>}
-            {event.resolution && <div style={{ color: "#355" }}>Resolution Notes: {event.resolution}</div>}
-            <a href={"https://sepolia.etherscan.io/tx/" + event.txHash} target="_blank" rel="noreferrer" style={linkStyle}>
-              View tx
-            </a>
-          </div>
+          <Card key={event.id}>
+            <CardContent className="grid gap-1.5 pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge>{event.type}</Badge>
+                <span className="text-[#8a9891]">{event.time}</span>
+              </div>
+              <div className="text-sm text-[#8a9891]">Source: {event.source}</div>
+              {event.hash && <div className="break-all font-mono text-sm text-[#aebbb5]">Product Hash: {event.hash}</div>}
+              {typeof event.escrowId === "number" && <div className="text-[#aebbb5]">Escrow ID: {event.escrowId}</div>}
+              {typeof event.tokenId === "number" && <div className="text-[#aebbb5]">Token ID: {event.tokenId}</div>}
+              {event.from && <div className="break-all font-mono text-sm text-[#aebbb5]">From: {event.from}</div>}
+              {event.to && <div className="break-all font-mono text-sm text-[#aebbb5]">To: {event.to}</div>}
+              {event.buyer && <div className="break-all font-mono text-sm text-[#aebbb5]">Buyer: {event.buyer}</div>}
+              {event.seller && <div className="break-all font-mono text-sm text-[#aebbb5]">Seller: {event.seller}</div>}
+              {event.raisedBy && <div className="break-all font-mono text-sm text-[#aebbb5]">Raised By: {event.raisedBy}</div>}
+              {event.artisan && <div className="break-all font-mono text-sm text-[#aebbb5]">Artisan: {event.artisan}</div>}
+              {event.signer && <div className="break-all font-mono text-sm text-[#aebbb5]">Signer: {event.signer}</div>}
+              {event.scanner && <div className="break-all font-mono text-sm text-[#aebbb5]">Scanner: {event.scanner}</div>}
+              {event.metadataHash && (
+                <div className="break-all font-mono text-sm text-[#aebbb5]">Metadata Hash: {event.metadataHash}</div>
+              )}
+              {event.nonce && <div className="break-all font-mono text-sm text-[#aebbb5]">Nonce: {event.nonce}</div>}
+              {typeof event.count === "number" && <div className="text-[#aebbb5]">Transfer Count: {event.count}</div>}
+              {typeof event.transferId === "number" && <div className="text-[#aebbb5]">Transfer ID: {event.transferId}</div>}
+              {typeof event.replayed === "boolean" && (
+                <div className="text-[#aebbb5]">Replay: {event.replayed ? "Detected" : "Fresh nonce"}</div>
+              )}
+              {event.salePriceEth && <div className="text-[#aebbb5]">Sale Price: {event.salePriceEth} ETH</div>}
+              {event.refundEth && <div className="text-[#aebbb5]">Refund: {event.refundEth} ETH</div>}
+              {event.artisanAmountEth && <div className="text-[#aebbb5]">Artisan Amount: {event.artisanAmountEth} ETH</div>}
+              {event.sellerAmountEth && <div className="text-[#aebbb5]">Seller Amount: {event.sellerAmountEth} ETH</div>}
+              {typeof event.sellerWins === "boolean" && (
+                <div className="text-[#aebbb5]">Resolution: {event.sellerWins ? "Seller wins" : "Buyer wins"}</div>
+              )}
+              {event.reason && <div className="text-[#aebbb5]">Reason: {event.reason}</div>}
+              {event.resolution && <div className="text-[#aebbb5]">Resolution Notes: {event.resolution}</div>}
+              <a
+                href={"https://sepolia.etherscan.io/tx/" + event.txHash}
+                target="_blank"
+                rel="noreferrer"
+                className="w-fit font-semibold text-[#34d399] no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#34d399] rounded"
+              >
+                View tx
+              </a>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </section>
   );
 }
-
-const cardStyle = {
-  background: "#fff",
-  border: "1px solid #d9ebe4",
-  borderRadius: 12,
-  padding: 12,
-  display: "grid",
-  gap: 6
-};
-
-const monoText = {
-  color: "#355",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  wordBreak: "break-all"
-};
-
-const linkStyle = {
-  color: "#176f52",
-  fontWeight: 700,
-  textDecoration: "none"
-};

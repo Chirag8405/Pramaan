@@ -1,7 +1,11 @@
 "use client";
 
+import { Info } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Card, CardContent } from "./ui/card";
+
+const TERROIR_EXPLANATION =
+  "On-chain trust score for this specific product. It starts from the AI photo-authenticity check at registration, then adjusts as the product changes hands — dropping if an unverified handler joins the chain or if custody moves suspiciously fast.";
 
 function getScoreMeta(rawScore) {
   const score = Math.max(0, Math.min(100, Number(rawScore) || 0));
@@ -10,8 +14,8 @@ function getScoreMeta(rawScore) {
     return {
       score,
       status: "Authentic",
-      color: "#16794d",
-      bg: "#d8f5e7"
+      color: "#4ade80",
+      bg: "#0f2e22"
     };
   }
 
@@ -19,16 +23,16 @@ function getScoreMeta(rawScore) {
     return {
       score,
       status: "Caution",
-      color: "#8b5a00",
-      bg: "#fff0cc"
+      color: "#fbbf24",
+      bg: "#332408"
     };
   }
 
   return {
     score,
     status: "Compromised",
-    color: "#8a1f1f",
-    bg: "#ffe0e0"
+    color: "#f87171",
+    bg: "#3a1414"
   };
 }
 
@@ -36,7 +40,7 @@ export default function TerritorScore({ score }) {
   const meta = getScoreMeta(score);
 
   return (
-    <Card className="border-[#d8e9e2]">
+    <Card>
       <CardContent className="grid gap-4 p-4">
         <div className="flex items-center gap-3">
           <div
@@ -56,11 +60,21 @@ export default function TerritorScore({ score }) {
             {meta.score}
           </div>
           <div className="grid gap-1">
-            <div className="text-sm text-[#49665e]">Terroir Score</div>
+            <div className="flex items-center gap-1.5 text-sm text-[#aebbb5]">
+              Terroir Score
+              <Info
+                size={13}
+                className="cursor-help text-[#8a9891]"
+                aria-label={TERROIR_EXPLANATION}
+                title={TERROIR_EXPLANATION}
+              />
+            </div>
             <div className="text-[1.2rem] font-bold" style={{ color: meta.color }}>{meta.status}</div>
-            <Badge variant="neutral" className="w-fit">Live Integrity Signal</Badge>
+            <Badge variant="neutral" className="w-fit">Updates as the product changes hands</Badge>
           </div>
         </div>
+
+        <p className="m-0 text-xs text-[#8a9891]">{TERROIR_EXPLANATION}</p>
 
         <div>
           <div
@@ -68,9 +82,9 @@ export default function TerritorScore({ score }) {
               width: "100%",
               height: 12,
               borderRadius: 999,
-              background: "#edf5f2",
+              background: "#1a211e",
               overflow: "hidden",
-              border: "1px solid #d8e8e2"
+              border: "1px solid #26312b"
             }}
           >
             <div

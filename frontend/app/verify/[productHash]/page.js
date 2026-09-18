@@ -11,7 +11,7 @@ import { CHAIN_ID, PRODUCT_REGISTRY_ADDRESS } from "../../../src/utils/constants
 const AUTH_MESSAGE = "Authentic Pramaan Scan";
 const ZERO_HASH = "0x" + "00".repeat(32);
 
-function normalizeSecretKey(value) {
+function normalizeHexParam(value) {
     const raw = String(value || "").trim();
     const unquoted = raw.replace(/^['\"]|['\"]$/g, "").trim();
     if (!unquoted) {
@@ -81,7 +81,7 @@ export default function ProductHashVerifyPage() {
         return Array.isArray(raw) ? raw[0] : raw || "";
     }, [params]);
 
-    const secret = normalizeSecretKey(searchParams.get("secret") || "");
+    const signatureFromUrl = normalizeHexParam(searchParams.get("sig") || "");
     const nonceFromUrl = normalizeNonce(searchParams.get("nonce") || "");
 
     const [loading, setLoading] = useState(true);
@@ -137,14 +137,12 @@ export default function ProductHashVerifyPage() {
                     deviceSignatureMatches = recoveredFromDeviceSignature.toLowerCase() === provenanceSigner.toLowerCase();
                 }
 
-                let recoveredFromSecret = ethers.constants.AddressZero;
-                let secretMatches = false;
-                if (secret) {
-                    const wallet = new ethers.Wallet(secret);
+                let recoveredFromSignature = ethers.constants.AddressZero;
+                let signatureMatches = false;
+                if (signatureFromUrl) {
                     const challenge = AUTH_MESSAGE + ":" + productHash + ":" + activeNonce;
-                    const challengeSignature = await wallet.signMessage(challenge);
-                    recoveredFromSecret = ethers.utils.verifyMessage(challenge, challengeSignature);
-                    secretMatches = recoveredFromSecret.toLowerCase() === provenanceSigner.toLowerCase();
+                    recoveredFromSignature = ethers.utils.verifyMessage(challenge, signatureFromUrl);
+                    signatureMatches = recoveredFromSignature.toLowerCase() === provenanceSigner.toLowerCase();
                 }
 
                 const verified = Boolean(deviceSignatureMatches && hasMetadataHash);
@@ -163,11 +161,11 @@ export default function ProductHashVerifyPage() {
                         hasMetadataHash,
                         hasDeviceSignature,
                         deviceSignatureMatches,
-                        secretMatches,
-                        secretProvided: Boolean(secret),
+                        signatureMatches,
+                        signatureProvided: Boolean(signatureFromUrl),
                         provenanceSigner,
                         recoveredFromDeviceSignature,
-                        recoveredFromSecret,
+                        recoveredFromSignature,
                         productName: record.productName,
                         giTag: record.giTag,
                         metadataHash: record.metadataHash
@@ -189,7 +187,7 @@ export default function ProductHashVerifyPage() {
         return () => {
             cancelled = true;
         };
-    }, [productHash, secret, nonceFromUrl]);
+    }, [productHash, signatureFromUrl, nonceFromUrl]);
 
     async function onCheckpointNonce() {
         if (!details || !scanNonce) {
@@ -227,98 +225,98 @@ export default function ProductHashVerifyPage() {
     }
 
     return (
-        <main className="min-h-screen bg-[radial-gradient(circle_at_top,#0f172a_0%,#020617_55%,#000000_100%)] px-4 py-8 text-slate-100">
+        <main className="min-h-screen bg-[radial-gradient(circle_at_top,#131917_0%,#0b0f0e_55%,#000000_100%)] px-4 py-8 text-[#f3f6f4]">
             <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6 shadow-[0_18px_70px_rgba(0,0,0,0.55)] backdrop-blur">
-                    <p className="m-0 text-xs uppercase tracking-[0.28em] text-emerald-300/80">Pramaan Hardware Handshake</p>
-                    <h1 className="mt-2 text-4xl font-black tracking-tight md:text-6xl">Scan Integrity Check</h1>
-                    <p className="mt-3 text-slate-300">
-                        We compare a recovered signer from your secret with the on-chain provenance signer for this product.
+                <div className="rounded-3xl border border-[#26312b] bg-[#131917]/90 p-6 shadow-[0_18px_70px_rgba(0,0,0,0.55)] backdrop-blur">
+                    <p className="m-0 text-xs uppercase tracking-[0.28em] text-[#34d399]/80">Pramaan Hardware Handshake</p>
+                    <h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl font-bold tracking-tight md:text-6xl">Scan Integrity Check</h1>
+                    <p className="mt-3 text-[#aebbb5]">
+                        We compare a recovered signer from the QR's signature with the on-chain provenance signer for this product.
                     </p>
                 </div>
 
                 {loading && (
-                    <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-10 text-center">
-                        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-slate-700 border-t-emerald-400" />
-                        <p className="m-0 text-xl font-semibold text-slate-100">Verifying hardware signature...</p>
+                    <div className="rounded-3xl border border-[#35443c] bg-[#1a211e] p-10 text-center">
+                        <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-[#35443c] border-t-[#34d399]" />
+                        <p className="m-0 text-xl font-semibold text-[#f3f6f4]">Verifying hardware signature...</p>
                     </div>
                 )}
 
                 {!loading && error && (
-                    <div className="rounded-3xl border border-rose-500/60 bg-rose-950/70 p-8 text-rose-100">
+                    <div className="rounded-3xl border border-[#4a1f1f] bg-[#3a1414] p-8 text-[#f87171]">
                         <p className="m-0 text-3xl font-black">Verification Error</p>
-                        <p className="mt-2 text-base text-rose-200">{error}</p>
+                        <p className="mt-2 text-base text-[#f87171]">{error}</p>
                     </div>
                 )}
 
                 {!loading && !error && details && details.verified && (
-                    <div className="rounded-3xl border-2 border-emerald-400 bg-emerald-950/80 p-8 shadow-[0_0_65px_rgba(16,185,129,0.28)]">
+                    <div className="rounded-3xl border-2 border-[#34d399] bg-[#0f2e22] p-8 shadow-[0_0_65px_rgba(16,185,129,0.28)]">
                         <p className="m-0 text-center text-6xl md:text-8xl">✅</p>
-                        <h2 className="mt-3 text-center text-4xl font-black tracking-tight text-emerald-200 md:text-6xl">Attestation Verified</h2>
-                        <p className="mt-3 text-center text-lg text-emerald-100">
+                        <h2 className="mt-3 text-center font-[family-name:var(--font-display)] text-4xl font-bold tracking-tight text-[#4ade80] md:text-6xl">Attestation Verified</h2>
+                        <p className="mt-3 text-center text-lg text-[#4ade80]">
                             On-chain device attestation matches the configured provenance signer.
                         </p>
                     </div>
                 )}
 
                 {!loading && !error && details && !details.verified && (
-                    <div className="rounded-3xl border-2 border-rose-500 bg-rose-950/80 p-8 shadow-[0_0_65px_rgba(244,63,94,0.3)]">
+                    <div className="rounded-3xl border-2 border-[#f87171] bg-[#3a1414] p-8 shadow-[0_0_65px_rgba(244,63,94,0.3)]">
                         <p className="m-0 text-center text-6xl md:text-8xl">❌</p>
-                        <h2 className="mt-3 text-center text-4xl font-black tracking-tight text-rose-200 md:text-6xl">Attestation Failed</h2>
-                        <p className="mt-3 text-center text-lg text-rose-100">
+                        <h2 className="mt-3 text-center font-[family-name:var(--font-display)] text-4xl font-bold tracking-tight text-[#f87171] md:text-6xl">Attestation Failed</h2>
+                        <p className="mt-3 text-center text-lg text-[#f87171]">
                             Metadata hash or device signature does not satisfy the expected provenance check.
                         </p>
                     </div>
                 )}
 
                 {!loading && !error && details && (
-                    <div className="grid gap-4 rounded-3xl border border-white/10 bg-slate-950/70 p-6 md:grid-cols-2">
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4 md:col-span-2">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Product</p>
-                            <p className="m-0 text-xl font-bold text-slate-100">
+                    <div className="grid gap-4 rounded-3xl border border-[#26312b] bg-[#131917]/90 p-6 md:grid-cols-2">
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4 md:col-span-2">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Product</p>
+                            <p className="m-0 text-xl font-bold text-[#f3f6f4]">
                                 {details.productName || "Unnamed Product"}
                                 {details.giTag ? " (" + details.giTag + ")" : ""}
                             </p>
                         </div>
 
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Product Hash</p>
-                            <p className="m-0 break-all font-mono text-sm text-slate-200">{details.productHash}</p>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Product Hash</p>
+                            <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{details.productHash}</p>
                         </div>
 
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Expected Provenance Signer</p>
-                            <p className="m-0 break-all font-mono text-sm text-slate-200" title={details.provenanceSigner}>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Expected Provenance Signer</p>
+                            <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]" title={details.provenanceSigner}>
                                 {shortAddress(details.provenanceSigner)}
                             </p>
                         </div>
 
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4 md:col-span-2">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Recovered From Device Signature</p>
-                            <p className="m-0 break-all font-mono text-sm text-slate-200" title={details.recoveredFromDeviceSignature}>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4 md:col-span-2">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Recovered From Device Signature</p>
+                            <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]" title={details.recoveredFromDeviceSignature}>
                                 {shortAddress(details.recoveredFromDeviceSignature)}
                             </p>
                         </div>
 
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Metadata Hash Anchored</p>
-                            <p className="m-0 text-sm text-slate-200">{details.hasMetadataHash ? "Yes" : "No"}</p>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Metadata Hash Anchored</p>
+                            <p className="m-0 text-sm text-[#f3f6f4]">{details.hasMetadataHash ? "Yes" : "No"}</p>
                         </div>
 
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Device Signature Present</p>
-                            <p className="m-0 text-sm text-slate-200">{details.hasDeviceSignature ? "Yes" : "No"}</p>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Device Signature Present</p>
+                            <p className="m-0 text-sm text-[#f3f6f4]">{details.hasDeviceSignature ? "Yes" : "No"}</p>
                         </div>
 
-                        <div className="rounded-xl border border-white/10 bg-slate-900/70 p-4 md:col-span-2">
-                            <p className="m-0 text-xs uppercase tracking-widest text-slate-400">Scan Nonce</p>
-                            <p className="m-0 break-all font-mono text-sm text-slate-200">{scanNonce}</p>
-                            <p className="m-0 mt-2 text-sm text-slate-300">
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4 md:col-span-2">
+                            <p className="m-0 text-xs uppercase tracking-widest text-[#8a9891]">Scan Nonce</p>
+                            <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{scanNonce}</p>
+                            <p className="m-0 mt-2 text-sm text-[#aebbb5]">
                                 Pre-check: {checkpointState.checkedUsed ? "Nonce already seen (possible replay)." : "Nonce not seen yet."}
                             </p>
-                            {details.secretProvided && (
-                                <p className="m-0 mt-1 text-sm text-slate-300">
-                                    QR secret challenge: {details.secretMatches ? "matched provenance signer" : "did not match provenance signer"}
+                            {details.signatureProvided && (
+                                <p className="m-0 mt-1 text-sm text-[#aebbb5]">
+                                    QR signature challenge: {details.signatureMatches ? "matched provenance signer" : "did not match provenance signer"}
                                 </p>
                             )}
                             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -326,17 +324,17 @@ export default function ProductHashVerifyPage() {
                                     type="button"
                                     onClick={onCheckpointNonce}
                                     disabled={checkpointLoading}
-                                    className="rounded-lg border border-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-60"
+                                    className="rounded-lg border border-[#1f4a38] px-3 py-2 text-sm font-semibold text-[#34d399] hover:bg-[#131917] disabled:opacity-60"
                                 >
                                     {checkpointLoading ? "Checkpointing..." : "Checkpoint This Scan On-Chain"}
                                 </button>
                                 {checkpointState.checkpointed && (
-                                    <span className="text-sm text-slate-200">
+                                    <span className="text-sm text-[#f3f6f4]">
                                         Result: {checkpointState.replayed ? "Replay detected" : "Fresh scan recorded"}
                                     </span>
                                 )}
                                 {checkpointState.txUrl && (
-                                    <a href={checkpointState.txUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-emerald-300 no-underline">
+                                    <a href={checkpointState.txUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[#34d399] no-underline">
                                         View checkpoint tx
                                     </a>
                                 )}
@@ -346,7 +344,7 @@ export default function ProductHashVerifyPage() {
                 )}
 
                 <div>
-                    <Link href="/verify" className="text-sm font-semibold text-emerald-300 no-underline hover:text-emerald-200">
+                    <Link href="/verify" className="text-sm font-semibold text-[#34d399] no-underline hover:text-[#4ade80]">
                         Back to scan and manual verify
                     </Link>
                 </div>

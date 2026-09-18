@@ -2,7 +2,6 @@ import {
     connect,
     createConfig,
     getAccount,
-    getPublicClient,
     getWalletClient,
     http,
     readContract,
@@ -185,26 +184,55 @@ async function ensureSepolia() {
     }
 }
 
+let pendingConnectRequest = null;
+
+// Wallet connection can be triggered from several places at once (a page's own
+// mount effect, the header's wallet indicator, a user click) — without this
+// guard, two near-simultaneous callers each fire their own eth_requestAccounts,
+// and MetaMask rejects the second with "Request of type 'wallet_requestPermissions'
+// already pending for origin ... Please wait." Sharing one in-flight promise
+// across all callers makes concurrent connectWallet() calls collapse into one.
 export async function connectWallet() {
-    ensureBrowserWallet();
+    if (pendingConnectRequest) {
+        return pendingConnectRequest;
+    }
 
-    await window.ethereum.request({ method: "eth_requestAccounts" });
+    pendingConnectRequest = (async () => {
+        ensureBrowserWallet();
 
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+
+        const account = getAccount(config);
+        if (!account.isConnected) {
+            await connect(config, { connector: injectedConnector });
+        }
+
+        await ensureSepolia();
+
+        const connected = getAccount(config);
+        const signer = await getWalletClient(config);
+
+        if (!connected.address || !signer) {
+            throw new Error("Failed to obtain wallet signer/address.");
+        }
+
+        return { signer, address: connected.address };
+    })();
+
+    try {
+        return await pendingConnectRequest;
+    } finally {
+        pendingConnectRequest = null;
+    }
+}
+
+// Passive check only — reads wagmi's cached connection state and never
+// prompts. Use this for on-mount "are we already connected?" checks; use
+// getConnectedAddress() below when the caller actually wants to prompt for
+// a connection if one doesn't exist yet.
+export function getConnectedAddressIfAvailable() {
     const account = getAccount(config);
-    if (!account.isConnected) {
-        await connect(config, { connector: injectedConnector });
-    }
-
-    await ensureSepolia();
-
-    const connected = getAccount(config);
-    const signer = await getWalletClient(config);
-
-    if (!connected.address || !signer) {
-        throw new Error("Failed to obtain wallet signer/address.");
-    }
-
-    return { signer, address: connected.address };
+    return account.isConnected && account.address ? account.address : "";
 }
 
 export async function getConnectedAddress() {
@@ -773,74 +801,85 @@ export async function getProductNftOwner(tokenId) {
     return owner;
 }
 
+// Derives Alchemy's NFT API base URL from the existing JSON-RPC URL, reusing
+// the same API key rather than requiring a separate env var. Parsed with the
+// URL API (not naive string-splitting) so it tolerates a trailing slash,
+// differently-cased host/path segments, or extra path/query noise. Returns ""
+// for anything that isn't recognizably an Alchemy endpoint, so callers can
+// fail fast instead of firing a request at a URL that was never going to work.
+function deriveAlchemyNftApiBase(rpcUrl) {
+    try {
+        const url = new URL(rpcUrl);
+        if (!url.hostname.toLowerCase().endsWith(".g.alchemy.com")) {
+            return "";
+        }
+
+        const segments = url.pathname.split("/").filter(Boolean);
+        const v2Index = segments.findIndex((segment) => segment.toLowerCase() === "v2");
+        const apiKey = v2Index >= 0 ? segments[v2Index + 1] : "";
+
+        if (!apiKey) {
+            return "";
+        }
+
+        return "https://" + url.hostname + "/nft/v3/" + apiKey;
+    } catch (_error) {
+        return "";
+    }
+}
+
+// Finds the highest token ID `recipientAddress` currently owns on the
+// ProductNFT contract — token IDs mint sequentially, so the highest owned ID
+// is the most recently minted one. Uses Alchemy's getNFTsForOwner (current
+// ownership state, one request, no block-range limit) rather than scanning
+// historical Transfer/ProductMinted logs via eth_getLogs: that scan required
+// a 20,000-block window per request while Alchemy's free tier caps
+// eth_getLogs at 10 blocks, so every request failed with a 400 and the loop
+// silently burned through up to 25 guaranteed-failing retries before giving
+// up with no visible error.
 export async function findLatestMintedTokenIdByRecipient(recipientAddress) {
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
 
     const recipient = getAddress(normalizeAddress(recipientAddress, "recipient address"));
-    const publicClient = getPublicClient(config);
-    if (!publicClient) {
-        throw new Error("Could not access public client for NFT lookup.");
+    const nftApiBase = deriveAlchemyNftApiBase(RPC_URL);
+
+    if (!nftApiBase) {
+        throw new Error("Automatic NFT lookup isn't available for the configured RPC provider.");
     }
 
-    const latestBlock = await publicClient.getBlockNumber();
-    const maxLookback = 500000n;
-    const windowSize = 20000n;
-    let toBlock = latestBlock;
+    let pageKey = "";
+    let highestTokenId = 0;
 
-    while (true) {
-        const fromBlock = toBlock > windowSize ? toBlock - windowSize + 1n : 0n;
-
-        let logs = [];
-        try {
-            logs = await publicClient.getLogs({
-                address: PRODUCT_NFT_ADDRESS,
-                abi: PRODUCT_NFT_ABI,
-                eventName: "ProductMinted",
-                args: { recipient },
-                fromBlock,
-                toBlock
-            });
-        } catch (_error) {
-            logs = [];
+    do {
+        const params = new URLSearchParams({ owner: recipient, withMetadata: "false" });
+        params.append("contractAddresses[]", PRODUCT_NFT_ADDRESS);
+        if (pageKey) {
+            params.set("pageKey", pageKey);
         }
 
-        if (logs.length > 0) {
-            const latestLog = logs[logs.length - 1];
-            return Number(latestLog.args?.tokenId || 0n);
+        const response = await fetch(nftApiBase + "/getNFTsForOwner?" + params.toString());
+        if (!response.ok) {
+            throw new Error("NFT lookup request failed (HTTP " + response.status + ").");
         }
 
-        // Fallback for providers that do not index custom events reliably.
-        try {
-            const transferLogs = await publicClient.getLogs({
-                address: PRODUCT_NFT_ADDRESS,
-                abi: ERC721_TRANSFER_EVENT_ABI,
-                eventName: "Transfer",
-                args: { from: ZERO_ADDRESS, to: recipient },
-                fromBlock,
-                toBlock
-            });
+        const payload = await response.json();
+        const owned = Array.isArray(payload?.ownedNfts) ? payload.ownedNfts : [];
 
-            if (transferLogs.length > 0) {
-                const latestTransfer = transferLogs[transferLogs.length - 1];
-                return Number(latestTransfer.args?.tokenId || 0n);
+        for (const nft of owned) {
+            const tokenId = Number(nft?.tokenId || 0);
+            if (tokenId > highestTokenId) {
+                highestTokenId = tokenId;
             }
-        } catch (_fallbackError) {
-            // Continue scanning older ranges.
         }
 
-        if (fromBlock === 0n) {
-            break;
-        }
+        pageKey = payload?.pageKey || "";
+    } while (pageKey);
 
-        const scanned = latestBlock - fromBlock + 1n;
-        if (scanned >= maxLookback) {
-            break;
-        }
-
-        toBlock = fromBlock - 1n;
+    if (!highestTokenId) {
+        throw new Error("No ProductNFT mint found for this wallet on Sepolia.");
     }
 
-    throw new Error("No ProductNFT mint found for this wallet on Sepolia.");
+    return highestTokenId;
 }
 
 export async function approveEscrowForToken(tokenId) {

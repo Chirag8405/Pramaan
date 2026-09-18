@@ -1,15 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogInWithAnonAadhaar, useAnonAadhaar } from "@anon-aadhaar/react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { Select } from "../../components/ui/select";
 import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
 import { uploadToIPFS } from "../../src/utils/ipfs";
-import { connectWallet, getArtisan, isVerifiedArtisan, registerArtisan } from "../../src/utils/contract";
+import {
+  connectWallet,
+  getArtisan,
+  getConnectedAddressIfAvailable,
+  isVerifiedArtisan,
+  registerArtisan
+} from "../../src/utils/contract";
 
 const TRANSFER_EVENT_SIGNATURE =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -51,6 +59,7 @@ export default function ArtisanPage() {
   const [aadhaarConflict, setAadhaarConflict] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(null);
+  const [alreadyVerified, setAlreadyVerified] = useState(false);
 
   const anonStatus = anonAadhaar?.status || "logged-out";
   const isAnonVerified = anonStatus === "logged-in";
@@ -62,22 +71,25 @@ export default function ArtisanPage() {
   useEffect(() => {
     let active = true;
 
-    async function redirectIfAlreadyRegistered() {
+    async function checkIfAlreadyVerified() {
       if (!hydrated) {
         return;
       }
 
+      // Passive only — never prompt a connection just from loading this
+      // page. If no wallet is already authorized, this simply finds
+      // nothing and the manual flow below stays available.
+      const existing = getConnectedAddressIfAvailable();
+      if (!existing) {
+        return;
+      }
+
+      setWallet(existing);
+
       try {
-        const connected = await connectWallet();
-        if (!active) {
-          return;
-        }
-
-        setWallet(connected.address);
-
         const [artisanRecord, verified] = await Promise.all([
-          getArtisan(connected.address),
-          isVerifiedArtisan(connected.address)
+          getArtisan(existing),
+          isVerifiedArtisan(existing)
         ]);
 
         if (!active) {
@@ -86,41 +98,42 @@ export default function ArtisanPage() {
 
         const isRegistered = Number(artisanRecord?.registeredAt || 0) > 0;
         if (isRegistered && Boolean(verified)) {
-          setMessage("Wallet already registered and verified. Redirecting to product registration...");
-          router.replace("/register-product");
+          // Surface it, but never navigate on the user's behalf — only an
+          // explicit click on the button below moves to Register Product.
+          setAlreadyVerified(true);
         }
       } catch (_error) {
-        // Keep manual flow available when wallet is not connected yet.
+        // Non-blocking: keep manual flow available if the read fails.
       }
     }
 
-    void redirectIfAlreadyRegistered();
+    void checkIfAlreadyVerified();
 
     return () => {
       active = false;
     };
-  }, [hydrated, router]);
+  }, [hydrated]);
 
   function getAnonStatusMeta(status) {
     if (status === "logged-in") {
       return {
-        bg: "#ddf9eb",
-        color: "#186d4c",
+        bg: "#0f2e22",
+        color: "#4ade80",
         label: "Anon Aadhaar proof verified locally"
       };
     }
 
     if (status === "logging-in") {
       return {
-        bg: "#fff1d1",
-        color: "#8a5b09",
+        bg: "#332408",
+        color: "#fbbf24",
         label: "Generating proof..."
       };
     }
 
     return {
-      bg: "#ffe9e9",
-      color: "#8a1f1f",
+      bg: "#3a1414",
+      color: "#f87171",
       label: "Proof not completed"
     };
   }
@@ -326,23 +339,23 @@ export default function ArtisanPage() {
 
     if (score >= 80) {
       return {
-        bg: "#ddf9eb",
-        color: "#186d4c",
+        bg: "#0f2e22",
+        color: "#4ade80",
         text: "Excellent craft signature detected"
       };
     }
 
     if (score >= 60) {
       return {
-        bg: "#fff1d1",
-        color: "#8a5b09",
+        bg: "#332408",
+        color: "#fbbf24",
         text: "Craft signature verified"
       };
     }
 
     return {
-      bg: "#ffe0e0",
-      color: "#8a1f1f",
+      bg: "#3a1414",
+      color: "#f87171",
       text: "Craft signature not detected — registration blocked"
     };
   }
@@ -390,37 +403,6 @@ export default function ArtisanPage() {
     setImagePreviewUrl(previewUrl);
 
     await runCraftAnalysis(file, form.craft);
-  }
-
-  async function onTryFakeDemo() {
-    setMessage("");
-    setSuccess(null);
-    setStepProgress("");
-
-    try {
-      setIsAnalyzing(true);
-
-      const response = await fetch("https://picsum.photos/640/480");
-      const blob = await response.blob();
-      const demoFile = new File([blob], "stock-photo-demo.jpg", { type: blob.type || "image/jpeg" });
-
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl);
-      }
-
-      setCraftImage(demoFile);
-      setImagePreviewUrl(URL.createObjectURL(demoFile));
-
-      // Run detector to mimic the real path, then force stable demo output.
-      await detectCraft(demoFile, form.craft);
-      setCraftScore(22);
-      setMessage("This stock image scored 22. Registration blocked at the contract level.");
-    } catch (_error) {
-      setCraftScore(22);
-      setMessage("This stock image scored 22. Registration blocked at the contract level.");
-    } finally {
-      setIsAnalyzing(false);
-    }
   }
 
   useEffect(() => {
@@ -526,8 +508,10 @@ export default function ArtisanPage() {
   if (!hydrated) {
     return (
       <section className="grid gap-4">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register as Artisan</h1>
-        <p className="m-0 text-[#49665e]">Loading secure verification...</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register as Artisan
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Loading secure verification...</p>
       </section>
     );
   }
@@ -535,8 +519,10 @@ export default function ArtisanPage() {
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register as Artisan</h1>
-        <p className="m-0 text-[#49665e]">Only submissions with craft score 60+ pass the on-chain gate.</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register as Artisan
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Upload a clear photo of your craft in progress — submissions scoring below 60 are rejected automatically.</p>
       </div>
 
       <div>
@@ -544,6 +530,19 @@ export default function ArtisanPage() {
           {wallet ? "Connected: " + wallet.slice(0, 8) + "..." : "Connect Wallet"}
         </Button>
       </div>
+
+      {alreadyVerified && (
+        <Card className="max-w-3xl border-[#1f4a38] bg-[#0f2e22]">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+            <p className="m-0 font-semibold text-[#4ade80]">
+              You&apos;re already a verified artisan on this wallet.
+            </p>
+            <Link href="/register-product" className="no-underline">
+              <Button type="button">Go to Register Product</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="max-w-3xl">
         <CardHeader>
@@ -559,7 +558,7 @@ export default function ArtisanPage() {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
 
-            <select
+            <Select
               required
               value={form.craft}
               onChange={(e) =>
@@ -569,14 +568,13 @@ export default function ArtisanPage() {
                   giRegion: giRegions[e.target.value] || ""
                 })
               }
-              className="flex h-11 w-full rounded-xl border border-[#cfe2db] bg-white px-3 py-2 text-sm text-[#1f2937] outline-none transition focus-visible:ring-2 focus-visible:ring-[#7fc2ac]"
             >
               {craftTypes.map((craftType) => (
                 <option key={craftType} value={craftType}>
                   {craftType}
                 </option>
               ))}
-            </select>
+            </Select>
 
             <Input
               required
@@ -585,9 +583,9 @@ export default function ArtisanPage() {
               readOnly
             />
 
-            <div className="grid gap-3 rounded-xl border border-[#d9ebe4] bg-[#f8fcfa] p-3">
+            <div className="grid gap-3 rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
               <div className="flex items-center justify-between">
-                <div className="font-semibold text-[#1f5b4b]">Anon Aadhaar Verification</div>
+                <div className="font-semibold text-[#f3f6f4]">Anon Aadhaar Verification</div>
                 <Badge variant="neutral">Required</Badge>
               </div>
               <div
@@ -597,7 +595,14 @@ export default function ArtisanPage() {
                 {anonStatusInfo.label}
               </div>
 
-              <LogInWithAnonAadhaar nullifierSeed={aadhaarNullifierSeed} fieldsToReveal={[]} />
+              <div className="grid gap-1.5">
+                <p className="m-0 text-xs text-[#8a9891]">
+                  Opens Anon Aadhaar&apos;s own verification window (third-party, keeps its own light styling).
+                </p>
+                <div className="w-fit rounded-lg bg-white p-1">
+                  <LogInWithAnonAadhaar nullifierSeed={aadhaarNullifierSeed} fieldsToReveal={[]} />
+                </div>
+              </div>
 
               <Button
                 type="button"
@@ -613,13 +618,13 @@ export default function ArtisanPage() {
               </Button>
 
               {aadhaarSyncedOnChain && (
-                <div className="rounded-lg border border-[#3e9f74] bg-[#dcf8e8] px-3 py-2 font-semibold text-[#1c664c]">
+                <div className="rounded-lg border border-[#1f4a38] bg-[#0f2e22] px-3 py-2 font-semibold text-[#4ade80]">
                   On-chain Aadhaar verification confirmed for connected wallet.
                 </div>
               )}
 
               {aadhaarConflict && (
-                <div className="rounded-lg border border-[#c94b4b] bg-[#fdeaea] px-3 py-2 font-semibold text-[#8a1f1f]">
+                <div className="rounded-lg border border-[#4a1f1f] bg-[#3a1414] px-3 py-2 font-semibold text-[#f87171]">
                   This Aadhaar identity has already verified a different wallet. Each Aadhaar identity may
                   verify only one wallet — connect the wallet you originally verified, or use a different
                   Aadhaar identity.
@@ -639,7 +644,7 @@ export default function ArtisanPage() {
                 <img
                   src={imagePreviewUrl}
                   alt="Craft preview"
-                  className="w-full max-w-md rounded-xl border border-[#d3e6df]"
+                  className="w-full max-w-md rounded-xl border border-[#26312b]"
                 />
               </div>
             )}
@@ -647,29 +652,31 @@ export default function ArtisanPage() {
             {isAnalyzing && (
               <div className="flex items-center gap-2">
                 <div className="spinner" />
-                <span className="text-[#355]">Analyzing craft authenticity...</span>
+                <span className="text-[#aebbb5]">Analyzing craft authenticity...</span>
               </div>
             )}
 
             {scoreInfo && (
-              <div
-                className="rounded-xl border px-3 py-2 font-semibold"
-                style={{ background: scoreInfo.bg, color: scoreInfo.color, borderColor: scoreInfo.color }}
-              >
-                Score: {craftScore} - {scoreInfo.text}
+              <div className="grid gap-1.5">
+                <div
+                  className="rounded-xl border px-3 py-2 font-semibold"
+                  style={{ background: scoreInfo.bg, color: scoreInfo.color, borderColor: scoreInfo.color }}
+                >
+                  Craft Score: {craftScore} - {scoreInfo.text}
+                </div>
+                <p className="m-0 text-xs text-[#8a9891]">
+                  This Craft Score is a quick local check gating artisan registration only — a different,
+                  lighter mechanism from the on-chain Terroir Score shown on product pages after registration.
+                </p>
               </div>
             )}
-
-            <Button type="button" variant="secondary" onClick={onTryFakeDemo} className="w-fit border-[#e9bcbc] bg-[#fff5f5] text-[#8a1f1f] hover:bg-[#ffecec]">
-              Try Fake Artisan Demo
-            </Button>
 
             <Button disabled={registerDisabled} type="submit" className="w-fit">
               {loading ? "Submitting..." : "Register Artisan"}
             </Button>
 
             {stepProgress && (
-              <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
+              <div className="rounded-lg border border-dashed border-[#35443c] bg-[#1a211e] px-3 py-2 text-[#aebbb5]">
                 {stepProgress}
               </div>
             )}
@@ -677,15 +684,18 @@ export default function ArtisanPage() {
         </CardContent>
       </Card>
 
-      {message && <p className="m-0 text-[#355]">{message}</p>}
+      {message && <p className="m-0 text-[#aebbb5]">{message}</p>}
 
       {success && (
-        <Card className="max-w-3xl border-[#3e9f74] bg-[#dcf8e8] text-[#1c664c]">
+        <Card className="max-w-3xl border-[#1f4a38] bg-[#0f2e22] text-[#4ade80]">
           <CardContent className="grid gap-1 p-4">
-            <div className="font-semibold">Soulbound Identity minted successfully.</div>
-            <div>SBT Token ID: {success.tokenId}</div>
+            <div className="font-semibold">Your artisan identity is now on the permanent record.</div>
+            <div>Identity ID: {success.tokenId}</div>
+            <div className="text-xs text-[#4ade80]/80">
+              This identity is permanently tied to your wallet — it can't be transferred or sold, so no one else can claim your track record.
+            </div>
             {success.txUrl && (
-              <a href={success.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#116f4f]">
+              <a href={success.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#4ade80] underline">
                 View on Etherscan
               </a>
             )}
@@ -697,8 +707,8 @@ export default function ArtisanPage() {
         .spinner {
           width: 18px;
           height: 18px;
-          border: 2px solid #d5ebe3;
-          border-top-color: #1d9e75;
+          border: 2px solid #26312b;
+          border-top-color: #34d399;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
         }

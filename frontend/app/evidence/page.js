@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent } from "../../components/ui/card";
 import { clearEvidence, loadEvidence, toMarkdown } from "../../src/utils/evidence";
 
 export default function EvidencePage() {
@@ -32,78 +34,61 @@ export default function EvidencePage() {
   }
 
   return (
-    <section style={{ display: "grid", gap: 14 }}>
-      <h1 style={{ margin: 0 }}>Demo Evidence</h1>
-      <p style={{ margin: 0, color: "#466" }}>
-        Judge-ready transaction proof captured from artisan/register/transfer/nonce-checkpoint/verify flows.
-      </p>
-      <p style={{ margin: 0, color: "#355" }}>Network: {evidence.network}</p>
-      <p style={{ margin: 0, color: "#355" }}>Generated: {evidence.generatedAt || "-"}</p>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" onClick={refresh} style={buttonStyle}>Refresh</button>
-        <button type="button" onClick={copyMarkdown} style={buttonStyle}>Copy Markdown</button>
-        <button type="button" onClick={onClear} style={buttonDanger}>Clear</button>
+    <section className="grid gap-6">
+      <div className="grid gap-2">
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Demo Evidence
+        </h1>
+        <p className="m-0 text-[#aebbb5]">
+          Judge-ready transaction proof captured from artisan/register/transfer/nonce-checkpoint/verify flows.
+        </p>
+        <p className="m-0 text-[#aebbb5]">Network: {evidence.network}</p>
+        <p className="m-0 text-[#aebbb5]">Generated: {evidence.generatedAt || "-"}</p>
       </div>
 
-      {status && <p style={{ margin: 0, color: "#355" }}>{status}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button suppressHydrationWarning type="button" onClick={refresh}>Refresh</Button>
+        <Button suppressHydrationWarning type="button" onClick={copyMarkdown} variant="secondary">Copy Markdown</Button>
+        <Button suppressHydrationWarning type="button" onClick={onClear} variant="destructive">
+          Clear
+        </Button>
+      </div>
 
-      <div style={{ display: "grid", gap: 10 }}>
-        {evidence.entries.length === 0 && <div style={cardStyle}>No evidence entries yet.</div>}
+      {status && <p className="m-0 text-[#aebbb5]">{status}</p>}
+
+      <div className="grid gap-3">
+        {evidence.entries.length === 0 && (
+          <Card>
+            <CardContent className="pt-6 text-[#aebbb5]">No evidence entries yet.</CardContent>
+          </Card>
+        )}
 
         {evidence.entries.map((item) => (
-          <div key={item.id} style={cardStyle}>
-            <strong style={{ color: "#1f6d50" }}>{item.action}</strong>
-            <div style={{ color: "#577" }}>{item.timestamp}</div>
-            <div style={monoText}>Product Hash: {item.productHash || "-"}</div>
-            <div>
-              Tx: {item.txUrl ? <a href={item.txUrl} target="_blank" rel="noreferrer" style={linkStyle}>{item.txUrl}</a> : "-"}
-            </div>
-            <div style={{ color: "#355" }}>Notes: {item.notes || "-"}</div>
-          </div>
+          <Card key={item.id}>
+            <CardContent className="grid gap-1.5 pt-6">
+              <strong className="text-[#4ade80]">{item.action}</strong>
+              <div className="text-[#8a9891]">{item.timestamp}</div>
+              <div className="break-all font-mono text-sm text-[#aebbb5]">Product Hash: {item.productHash || "-"}</div>
+              <div className="text-[#aebbb5]">
+                Tx:{" "}
+                {item.txUrl ? (
+                  <a
+                    href={item.txUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-[#34d399] no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#34d399] rounded"
+                  >
+                    {item.txUrl}
+                  </a>
+                ) : (
+                  "-"
+                )}
+              </div>
+              <div className="text-[#aebbb5]">Notes: {item.notes || "-"}</div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </section>
   );
 }
-
-const cardStyle = {
-  background: "#fff",
-  border: "1px solid #d9ebe4",
-  borderRadius: 12,
-  padding: 12,
-  display: "grid",
-  gap: 6
-};
-
-const monoText = {
-  color: "#355",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  wordBreak: "break-all"
-};
-
-const buttonStyle = {
-  background: "#1D9E75",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  padding: "10px 14px",
-  fontWeight: 700,
-  cursor: "pointer"
-};
-
-const buttonDanger = {
-  background: "#a23b3b",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  padding: "10px 14px",
-  fontWeight: 700,
-  cursor: "pointer"
-};
-
-const linkStyle = {
-  color: "#176f52",
-  fontWeight: 700,
-  textDecoration: "none"
-};

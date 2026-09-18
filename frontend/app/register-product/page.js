@@ -17,7 +17,7 @@ import {
   isVerifiedArtisan,
   mintProductTwin,
   registerProduct,
-  verifyProduct
+  verifyCraftImage
 } from "../../src/utils/contract";
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
@@ -82,6 +82,10 @@ export default function RegisterProductPage() {
   const [productImage, setProductImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [productHash, setProductHash] = useState("");
+  const [aiChecking, setAiChecking] = useState(false);
+  const [aiScore, setAiScore] = useState(null);
+  const [aiReason, setAiReason] = useState("");
+  const [aiError, setAiError] = useState("");
   const [statusText, setStatusText] = useState("");
   const [stepProgress, setStepProgress] = useState("");
   const [loading, setLoading] = useState(false);
@@ -172,11 +176,33 @@ export default function RegisterProductPage() {
     };
   }, []);
 
+  async function runAiCheck(file) {
+    setAiChecking(true);
+    setAiScore(null);
+    setAiReason("");
+    setAiError("");
+
+    try {
+      const result = await verifyCraftImage(file);
+      setAiScore(Number(result?.terroir_score));
+      setAiReason(String(result?.reason || ""));
+    } catch (error) {
+      const message = error?.message || "Could not run the AI authenticity check.";
+      setAiError(message.trim().replace(/\.+$/, ""));
+    } finally {
+      setAiChecking(false);
+    }
+  }
+
   async function onImageChange(event) {
     const file = event.target.files?.[0] || null;
     setProductImage(file);
     setProductHash("");
     setSuccess(null);
+    setAiChecking(false);
+    setAiScore(null);
+    setAiReason("");
+    setAiError("");
 
     if (!file) {
       if (previewUrl) {
@@ -198,6 +224,8 @@ export default function RegisterProductPage() {
     } catch (error) {
       setStatusText(error?.message || "Could not hash selected file.");
     }
+
+    await runAiCheck(file);
   }
 
   function getTruncatedHash(hash) {
@@ -230,6 +258,33 @@ export default function RegisterProductPage() {
 
     if (!productHash) {
       setStatusText("Product hash not ready yet.");
+      return;
+    }
+
+    if (aiChecking) {
+      setStatusText("AI authenticity check is still running. Please wait.");
+      return;
+    }
+
+    if (aiError) {
+      setStatusText("Could not run the AI authenticity check: " + aiError + ". Re-upload the image to retry.");
+      return;
+    }
+
+    if (typeof aiScore !== "number" || Number.isNaN(aiScore)) {
+      setStatusText("Upload a product image and wait for the AI authenticity check to complete.");
+      return;
+    }
+
+    if (aiScore < 70) {
+      const trimmedReason = aiReason.trim().replace(/\.+$/, "");
+      setStatusText(
+        "AI authenticity check scored this image " +
+        aiScore +
+        "/100" +
+        (trimmedReason ? " — " + trimmedReason : "") +
+        ". Minimum 70 required; registration is blocked."
+      );
       return;
     }
 
@@ -305,19 +360,15 @@ export default function RegisterProductPage() {
       setStepProgress("Step 4/5: Minting Product NFT twin...");
 
       const metadataUrl = getIPFSUrl(metadataCid);
-      let mintTerroirScore = 100;
-      try {
-        // Best-effort read; do not fail mint flow if RPC/state indexing lags.
-        const verification = await verifyProduct(productHash);
-        mintTerroirScore = Number(verification?.terroir || 100);
-      } catch (_verifyError) {
-        mintTerroirScore = 100;
-      }
 
+      // aiScore was already validated (>= 70) above, before any IPFS/on-chain
+      // calls were made — this is the real AI vision score, not a custody
+      // read, matching what ProductNFT.mintProduct's terroirScore param
+      // actually gates on.
       const mintResult = await mintProductTwin(
         walletAddress,
         metadataUrl,
-        mintTerroirScore,
+        aiScore,
         metadataCid
       );
 
@@ -354,6 +405,7 @@ export default function RegisterProductPage() {
         imageUrl,
         metadataUrl,
         mintedTokenId,
+        mintedTerroirScore: aiScore,
         provenanceSigner: signerAddress || walletAddress,
         batchId: autoBatch.batchId,
         lotNumber: autoBatch.lotNumber,
@@ -379,7 +431,7 @@ export default function RegisterProductPage() {
             handlers: [],
             handlerVerified: []
           },
-          terroir: 100,
+          terroir: aiScore,
           mintedTokenId: mintedTokenId || ""
         };
         window.sessionStorage.setItem("pramaan:lastRegisteredProduct", JSON.stringify(snapshot));
@@ -404,8 +456,10 @@ export default function RegisterProductPage() {
   if (checking) {
     return (
       <section className="grid gap-3">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register Product</h1>
-        <p className="m-0 text-[#49665e]">Checking artisan identity...</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register Product
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Checking artisan identity...</p>
       </section>
     );
   }
@@ -413,14 +467,16 @@ export default function RegisterProductPage() {
   if (!isVerified) {
     return (
       <section className="grid gap-4">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register Product</h1>
-        <p className="m-0 font-semibold text-[#8a1f1f]">
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register Product
+        </h1>
+        <p className="m-0 font-semibold text-[#f87171]">
           {statusText || "You must register as an artisan before registering products."}
         </p>
-        <Card className="max-w-2xl bg-[#fff9f9]">
-          <CardContent className="grid gap-2 p-4 text-[#49665e]">
+        <Card className="max-w-2xl border-[#4a1f1f]">
+          <CardContent className="grid gap-2 p-4 text-[#aebbb5]">
             {walletAddress && <p className="m-0">Wallet: {walletAddress}</p>}
-            <p className="m-0">SBT Token ID: {tokenId}</p>
+            <p className="m-0">Artisan Identity ID: {tokenId}</p>
             <Link href="/artisan" className="w-fit no-underline">
               <Button>Go to Artisan Registration</Button>
             </Link>
@@ -430,46 +486,58 @@ export default function RegisterProductPage() {
     );
   }
 
+  const trimmedAiReason = aiReason.trim().replace(/\.+$/, "");
+
+  const registerDisabled =
+    loading ||
+    aiChecking ||
+    Boolean(aiError) ||
+    typeof aiScore !== "number" ||
+    Number.isNaN(aiScore) ||
+    aiScore < 70;
+
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register Product</h1>
-        <p className="m-0 text-[#49665e]">Upload product proof, hash it, pin to IPFS, then register on-chain.</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register Product
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Upload a photo of your finished product to create its permanent provenance record.</p>
       </div>
 
       <Card className="max-w-4xl">
         <CardHeader className="pb-2">
           <CardTitle>Verified Artisan</CardTitle>
-          <CardDescription>This identity is eligible to register product twins.</CardDescription>
+          <CardDescription>This identity can register products under its own provenance record.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Wallet</p>
-            <p className="m-0 break-all font-mono text-sm text-[#20473d]">{walletAddress}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Wallet</p>
+            <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{walletAddress}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Name</p>
-            <p className="m-0 text-lg font-semibold text-[#20473d]">{artisan?.name || "-"}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Name</p>
+            <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{artisan?.name || "-"}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">SBT Token ID</p>
-            <p className="m-0 text-lg font-semibold text-[#20473d]">{tokenId}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Artisan Identity ID</p>
+            <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{tokenId}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Craft Type</p>
-            <p className="m-0 text-base font-medium text-[#20473d]">{artisan?.craft || "-"}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Craft Type</p>
+            <p className="m-0 text-base font-medium text-[#f3f6f4]">{artisan?.craft || "-"}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">GI Region</p>
-            <p className="m-0 text-base font-medium text-[#20473d]">{artisan?.giRegion || giRegions[String(artisan?.craft || "")] || "-"}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">GI Region</p>
+            <p className="m-0 text-base font-medium text-[#f3f6f4]">{artisan?.giRegion || giRegions[String(artisan?.craft || "")] || "-"}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Aadhaar Status</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Aadhaar Status</p>
             <div className="mt-1">
               <Badge variant={artisan?.isAadhaarVerified ? "default" : "warm"}>
                 {artisan?.isAadhaarVerified ? "Verified" : "Not Verified"}
@@ -477,8 +545,8 @@ export default function RegisterProductPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Fraud Flag</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Fraud Flag</p>
             <div className="mt-1">
               <Badge variant={artisan?.isFraudulent ? "warm" : "default"}>
                 {artisan?.isFraudulent ? "Flagged" : "Clear"}
@@ -490,8 +558,8 @@ export default function RegisterProductPage() {
 
       <Card className="max-w-3xl">
         <CardHeader className="pb-2">
-          <CardTitle>Product Metadata</CardTitle>
-          <CardDescription>Demo-friendly form with visible auto-filled logistics fields and background attestation security.</CardDescription>
+          <CardTitle>Product Details</CardTitle>
+          <CardDescription>Batch and lot numbers are filled in automatically; the record is signed and secured behind the scenes.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid gap-3">
@@ -528,22 +596,48 @@ export default function RegisterProductPage() {
               <img
                 src={previewUrl}
                 alt="Product preview"
-                className="w-full max-w-md rounded-xl border border-[#d3e6df]"
+                className="w-full max-w-md rounded-xl border border-[#26312b]"
               />
             )}
 
             {productHash && (
-              <p className="m-0 font-mono text-[#2f5a50]">
+              <p className="m-0 font-mono text-[#34d399]">
                 Product hash: {getTruncatedHash(productHash)}
               </p>
             )}
 
-            <Button type="submit" disabled={loading} className="w-fit">
+            {aiChecking && (
+              <div className="flex items-center gap-2">
+                <div className="spinner" />
+                <span className="text-[#aebbb5]">Checking craft authenticity...</span>
+              </div>
+            )}
+
+            {aiError && (
+              <div className="rounded-xl border border-[#4a1f1f] bg-[#3a1414] px-3 py-2 font-semibold text-[#f87171]">
+                Could not run the AI authenticity check: {aiError}. Re-upload the image to retry.
+              </div>
+            )}
+
+            {typeof aiScore === "number" && !aiChecking && !aiError && (
+              <div className="grid gap-2">
+                <TerritorScore score={aiScore} />
+                {aiReason && <p className="m-0 text-sm text-[#aebbb5]">{aiReason}</p>}
+                {aiScore < 70 && (
+                  <div className="rounded-xl border border-[#4a1f1f] bg-[#3a1414] px-3 py-2 font-semibold text-[#f87171]">
+                    AI authenticity check scored this image {aiScore}/100{trimmedAiReason ? " — " + trimmedAiReason : ""}.
+                    Minimum 70 required — registration blocked.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button type="submit" disabled={registerDisabled} className="w-fit">
               {loading ? "Processing..." : "Register Product"}
             </Button>
 
             {stepProgress && (
-              <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
+              <div className="rounded-lg border border-dashed border-[#35443c] bg-[#1a211e] px-3 py-2 text-[#34d399]">
                 {stepProgress}
               </div>
             )}
@@ -551,46 +645,46 @@ export default function RegisterProductPage() {
         </CardContent>
       </Card>
 
-      {statusText && <p className="m-0 text-[#355]">{statusText}</p>}
+      {statusText && <p className="m-0 text-[#aebbb5]">{statusText}</p>}
 
       {success && (
-        <Card className="max-w-4xl border-[#cde6dc] bg-[#f4fbf8]">
+        <Card className="max-w-4xl border-[#1f4a38] bg-[#0f2e22]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-[#1f6d50]">Registration Complete</CardTitle>
+            <CardTitle className="text-[#4ade80]">Registration Complete</CardTitle>
             <CardDescription>Product twin has been anchored successfully.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 text-[#355]">
-            <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product Hash</p>
-              <p className="m-0 break-all font-mono text-sm text-[#20473d]">{success.productHash}</p>
+          <CardContent className="grid gap-4 text-[#aebbb5]">
+            <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Product Hash</p>
+              <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{success.productHash}</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Provenance Signer</p>
-                <p className="m-0 font-mono text-sm text-[#20473d]" title={success.provenanceSigner}>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Provenance Signer</p>
+                <p className="m-0 font-mono text-sm text-[#f3f6f4]" title={success.provenanceSigner}>
                   {getTruncatedAddress(success.provenanceSigner)}
                 </p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Production Date</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{success.productionDate}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Production Date</p>
+                <p className="m-0 text-base font-semibold text-[#f3f6f4]">{success.productionDate}</p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Batch ID</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{success.batchId}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Batch ID</p>
+                <p className="m-0 text-base font-semibold text-[#f3f6f4]">{success.batchId}</p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Lot and Size</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{success.lotNumber} • {success.batchSize}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Lot and Size</p>
+                <p className="m-0 text-base font-semibold text-[#f3f6f4]">{success.lotNumber} • {success.batchSize}</p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product NFT Token ID</p>
-                <p className="m-0 text-lg font-semibold text-[#20473d]">{success.mintedTokenId || "Auto-detect on Transfer page"}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Product NFT Token ID</p>
+                <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{success.mintedTokenId || "Auto-detect on Transfer page"}</p>
               </div>
             </div>
 
@@ -623,11 +717,28 @@ export default function RegisterProductPage() {
             </div>
 
             <div style={{ maxWidth: 340 }}>
-              <TerritorScore score={100} />
+              <TerritorScore score={success.mintedTerroirScore} />
             </div>
           </CardContent>
         </Card>
       )}
+
+      <style jsx>{`
+        .spinner {
+          width: 18px;
+          height: 18px;
+          border: 2px solid #26312b;
+          border-top-color: #34d399;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </section>
   );
 }

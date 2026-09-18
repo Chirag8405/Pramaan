@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, Fingerprint, Landmark, Leaf, ShieldCheck, Sparkles } from "lucide-react";
+import { BadgeCheck, Fingerprint, Landmark, Leaf, ShieldCheck, Sparkles } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import GetStartedButton from "../components/GetStartedButton";
 
 const features = [
     {
@@ -54,15 +55,39 @@ const steps = [
     }
 ];
 
+const whyPramaan = [
+    {
+        icon: Leaf,
+        iconColor: "#fbbf24",
+        title: "Preserve Craft Heritage",
+        description: "Give traditional artisans a digital trust layer without forcing them to share more data than needed."
+    },
+    {
+        icon: BadgeCheck,
+        iconColor: "#34d399",
+        title: "Reduce Supply Chain Fraud",
+        description: "Make origin and handling auditable, so buyers and retailers can verify product authenticity confidently."
+    },
+    {
+        icon: ShieldCheck,
+        iconColor: "#60a5fa",
+        title: "Reward Honest Networks",
+        description: "Incentivize verified behavior with dynamic payouts and slash trust for fraudulent endorsements."
+    }
+];
+
 export default function HomePage() {
     return (
         <section className="grid gap-8">
-            <Card className="overflow-hidden border-[#d8cab5] bg-linear-to-br from-[#fff8ef] via-[#f7f2e9] to-[#eef6f2]">
+            <Card className="overflow-hidden border-[#1f4a38] bg-linear-to-br from-[#10201a] via-[#0f1613] to-[#0b0f0e]">
                 <CardHeader className="gap-4">
                     <Badge variant="warm" className="w-fit">
                         Pramaan - Sovereign Traceability System
                     </Badge>
-                    <CardTitle className="text-3xl leading-tight md:text-5xl">
+                    <CardTitle
+                        as="h1"
+                        className="font-[family-name:var(--font-display)] text-3xl leading-tight tracking-tight md:text-5xl"
+                    >
                         Build Trust for Every Handmade Product
                     </CardTitle>
                     <CardDescription className="max-w-3xl text-base md:text-lg">
@@ -71,12 +96,7 @@ export default function HomePage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-wrap gap-3">
-                    <Link href="/artisan">
-                        <Button size="lg" className="gap-2">
-                            Get Started
-                            <ArrowRight size={16} />
-                        </Button>
-                    </Link>
+                    <GetStartedButton />
                     <Link href="#core-features">
                         <Button size="lg" variant="secondary" type="button">
                             Explore Core Features
@@ -94,38 +114,25 @@ export default function HomePage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-xl border border-[#e2d3be] bg-[#fff7ee] p-4">
-                        <div className="mb-2 flex items-center gap-2 font-semibold text-[#8b4d33]">
-                            <Leaf size={16} />
-                            Preserve Craft Heritage
-                        </div>
-                        <p className="text-sm text-slate-600">
-                            Give traditional artisans a digital trust layer without forcing them to share more data than needed.
-                        </p>
-                    </div>
-                    <div className="rounded-xl border border-[#d4e4dd] bg-[#f1f9f5] p-4">
-                        <div className="mb-2 flex items-center gap-2 font-semibold text-[#205746]">
-                            <BadgeCheck size={16} />
-                            Reduce Supply Chain Fraud
-                        </div>
-                        <p className="text-sm text-slate-600">
-                            Make origin and handling auditable, so buyers and retailers can verify product authenticity confidently.
-                        </p>
-                    </div>
-                    <div className="rounded-xl border border-[#dae2e7] bg-[#f7fafc] p-4">
-                        <div className="mb-2 flex items-center gap-2 font-semibold text-[#345061]">
-                            <ShieldCheck size={16} />
-                            Reward Honest Networks
-                        </div>
-                        <p className="text-sm text-slate-600">
-                            Incentivize verified behavior with dynamic payouts and slash trust for fraudulent endorsements.
-                        </p>
-                    </div>
+                    {whyPramaan.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                            <div key={item.title} className="rounded-xl border border-[#26312b] bg-[#1a211e] p-4">
+                                <div className="mb-2 flex items-center gap-2 font-semibold text-[#f3f6f4]">
+                                    <Icon size={16} color={item.iconColor} />
+                                    {item.title}
+                                </div>
+                                <p className="text-sm text-[#aebbb5]">{item.description}</p>
+                            </div>
+                        );
+                    })}
                 </CardContent>
             </Card>
 
             <section id="core-features" className="grid gap-4">
-                <h2 className="text-2xl font-bold text-[#20473d]">Core Features</h2>
+                <h2 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight text-[#f3f6f4]">
+                    Core Features
+                </h2>
                 <div className="grid gap-4 md:grid-cols-2">
                     {features.map((feature) => {
                         const Icon = feature.icon;
@@ -133,12 +140,12 @@ export default function HomePage() {
                             <Card key={feature.title}>
                                 <CardHeader>
                                     <CardTitle className="flex items-center gap-2 text-xl">
-                                        <Icon size={18} />
+                                        <Icon size={18} color="#34d399" />
                                         {feature.title}
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <p className="text-sm text-slate-600">{feature.description}</p>
+                                    <p className="text-sm text-[#aebbb5]">{feature.description}</p>
                                 </CardContent>
                             </Card>
                         );
@@ -147,19 +154,21 @@ export default function HomePage() {
             </section>
 
             <section className="grid gap-4">
-                <h2 className="text-2xl font-bold text-[#20473d]">Get Started Step-by-Step</h2>
-                <p className="text-sm text-slate-600">Follow this guided journey across Artisan, Product, Transfer, and Verify pages.</p>
+                <h2 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight text-[#f3f6f4]">
+                    Get Started Step-by-Step
+                </h2>
+                <p className="text-sm text-[#aebbb5]">Follow this guided journey across Artisan, Product, Transfer, and Verify pages.</p>
                 <div className="grid gap-3">
                     {steps.map((step) => (
                         <Card key={step.number}>
                             <CardContent className="pt-6">
                                 <div className="flex items-start gap-4">
-                                    <div className="mt-0.5 rounded-full border border-[#c7ddd5] bg-[#edf7f3] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#2d5d50]">
+                                    <div className="mt-0.5 rounded-full border border-[#1f4a38] bg-[#0f2e22] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#4ade80]">
                                         {step.number}
                                     </div>
                                     <div className="grid gap-1">
-                                        <div className="text-lg font-semibold text-[#20473d]">{step.title}</div>
-                                        <div className="text-sm text-slate-600">{step.description}</div>
+                                        <div className="text-lg font-semibold text-[#f3f6f4]">{step.title}</div>
+                                        <div className="text-sm text-[#aebbb5]">{step.description}</div>
                                     </div>
                                 </div>
                             </CardContent>

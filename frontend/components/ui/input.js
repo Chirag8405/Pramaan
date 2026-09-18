@@ -6,7 +6,7 @@ export function Input({ className, type = "text", suppressHydrationWarning = tru
             type={type}
             suppressHydrationWarning={suppressHydrationWarning}
             className={cn(
-                "flex h-11 w-full rounded-xl border border-[#cfe2db] bg-white px-3 py-2 text-sm text-[#1f2937] outline-none transition placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#7fc2ac]",
+                "flex h-11 w-full rounded-lg border border-[#35443c] bg-[#1a211e] px-3 py-2 text-sm text-[#f3f6f4] outline-none transition placeholder:text-[#8a9891] focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#131917]",
                 className
             )}
             {...props}

@@ -51,6 +51,8 @@ const publicClient = createPublicClient({
   transport: http(RPC_URL)
 });
 
+const DEMO_PRODUCT_HASH = String(process.env.NEXT_PUBLIC_DEMO_PRODUCT_HASH || "").trim();
+
 async function resolveAssetUrls(cid) {
   const metadataUrl = getIPFSUrl(cid);
 
@@ -82,6 +84,7 @@ export default function VerifyPage() {
   const [autoVerified, setAutoVerified] = useState(false);
   const [scanNonce, setScanNonce] = useState("");
   const [checkpointLoading, setCheckpointLoading] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -317,8 +320,8 @@ export default function VerifyPage() {
       return {
         icon: "✓",
         title: "AUTHENTIC PRODUCT",
-        color: "#16794d",
-        bg: "#ddf9eb"
+        color: "#4ade80",
+        bg: "#0f2e22"
       };
     }
 
@@ -326,8 +329,8 @@ export default function VerifyPage() {
       return {
         icon: "!",
         title: "CAUTION — CHAIN OF CUSTODY WEAKENED",
-        color: "#8a5b09",
-        bg: "#fff1d1"
+        color: "#fbbf24",
+        bg: "#332408"
       };
     }
 
@@ -335,8 +338,8 @@ export default function VerifyPage() {
       return {
         icon: "✕",
         title: "COMPROMISED — AUTHENTICITY CANNOT BE GUARANTEED",
-        color: "#8a1f1f",
-        bg: "#ffe0e0"
+        color: "#f87171",
+        bg: "#3a1414"
       };
     }
 
@@ -346,8 +349,10 @@ export default function VerifyPage() {
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Verify Product</h1>
-        <p className="m-0 text-[#49665e]">Enter a product hash to verify authenticity and custody trail.</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Verify Product
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Enter a product hash to verify authenticity and custody trail.</p>
       </div>
 
       <Card className="max-w-3xl">
@@ -358,14 +363,28 @@ export default function VerifyPage() {
               required
               value={hash}
               onChange={(e) => setHash(e.target.value)}
-              placeholder="0x..."
+              placeholder="Product code (from the product's tag or receipt)"
             />
-            <Input
-              suppressHydrationWarning
-              value={scanNonce}
-              onChange={(e) => setScanNonce(e.target.value)}
-              placeholder="Scan nonce (optional bytes32; auto-generated if empty)"
-            />
+            {DEMO_PRODUCT_HASH && (
+              <button
+                type="button"
+                onClick={() => setHash(DEMO_PRODUCT_HASH)}
+                className="w-fit text-xs font-semibold text-[#34d399] hover:text-[#4ade80] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] rounded"
+              >
+                Use example product hash
+              </button>
+            )}
+            <div className="grid gap-1">
+              <Input
+                suppressHydrationWarning
+                value={scanNonce}
+                onChange={(e) => setScanNonce(e.target.value)}
+                placeholder="Scan nonce (optional bytes32; auto-generated if empty)"
+              />
+              <p className="m-0 text-xs text-[#8a9891]">
+                A one-time value tied to this scan, used to detect replay — leave blank to auto-generate one.
+              </p>
+            </div>
             <Button suppressHydrationWarning disabled={loading} type="submit" className="w-fit">
               {loading ? "Verifying..." : "Verify Product"}
             </Button>
@@ -373,12 +392,35 @@ export default function VerifyPage() {
         </CardContent>
       </Card>
 
-      {status && <p className="m-0 text-[#355]">{status}</p>}
+      {resultType === RESULT.NONE && !resultData && (
+        <Card className="max-w-3xl">
+          <CardContent className="grid gap-2 pt-6 text-sm text-[#aebbb5]">
+            <p className="m-0 font-semibold text-[#f3f6f4]">New here?</p>
+            <p className="m-0">
+              Paste the product hash (0x + 64 hex characters) shown after registering a product, or scan a
+              retailer QR from the{" "}
+              <Link href="/retailer-verify" className="font-semibold text-[#34d399] no-underline">
+                Retailer Verify
+              </Link>{" "}
+              page to jump straight here.
+            </p>
+            <p className="m-0">
+              Don&apos;t have a product hash yet? {" "}
+              <Link href="/register-product" className="font-semibold text-[#34d399] no-underline">
+                Register a product
+              </Link>{" "}
+              first, then come back to verify it.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {status && <p className="m-0 text-[#aebbb5]">{status}</p>}
 
       {resultType === RESULT.NOT_FOUND && (
-        <Card className="max-w-3xl border-[#e7d8d8] bg-[#fff7f7]">
+        <Card className="max-w-3xl border-[#4a1f1f] bg-[#3a1414]">
           <CardContent className="pt-6">
-            <p className="m-0 font-semibold text-[#8a1f1f]">
+            <p className="m-0 font-semibold text-[#f87171]">
               This product has never been registered on Pramaan.
             </p>
           </CardContent>
@@ -399,7 +441,7 @@ export default function VerifyPage() {
                     placeItems: "center",
                     fontSize: 30,
                     fontWeight: 800,
-                    color: "white",
+                    color: "#06231a",
                     background: resultHeader.color
                   }}
                 >
@@ -415,9 +457,9 @@ export default function VerifyPage() {
           </div>
 
           {resultType === RESULT.CAUTION && (
-            <Card className="max-w-4xl border-[#e3c89a] bg-[#fff8e8]">
+            <Card className="max-w-4xl border-[#4a3416] bg-[#332408]">
               <CardContent className="pt-6">
-                <p className="m-0 font-semibold text-[#8a5b09]">
+                <p className="m-0 font-semibold text-[#fbbf24]">
                   {resultData.unverifiedCount} unverified handlers detected in supply chain.
                 </p>
               </CardContent>
@@ -425,9 +467,9 @@ export default function VerifyPage() {
           )}
 
           {resultType === RESULT.COMPROMISED && (
-            <Card className="max-w-4xl border-[#e1b5b5] bg-[#fff0f0]">
+            <Card className="max-w-4xl border-[#4a1f1f] bg-[#3a1414]">
               <CardContent className="pt-6">
-                <p className="m-0 font-semibold text-[#8a1f1f]">
+                <p className="m-0 font-semibold text-[#f87171]">
                   {resultData.compromisedHandler
                     ? "Score dropped due to unverified handler: " + truncateAddress(resultData.compromisedHandler.wallet)
                     : "Score dropped due to unverified custody events."}
@@ -438,126 +480,8 @@ export default function VerifyPage() {
 
           <Card className="max-w-4xl">
             <CardHeader className="pb-2">
-              <CardTitle>Product Record</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product</p>
-                <p className="m-0 text-lg font-semibold text-[#20473d]">
-                  {resultData.record.productName} ({resultData.record.giTag})
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Artisan</p>
-                <p className="m-0 text-base font-medium text-[#20473d]">{resultData.artisan?.name || "Unknown"}</p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Craft Type</p>
-                <p className="m-0 text-base font-medium text-[#20473d]">{resultData.artisan?.craft || "Unknown"}</p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">SBT Token ID</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{resultData.sbtId}</p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Registered At</p>
-                <p className="m-0 text-base font-medium text-[#20473d]">{formatDate(resultData.record.registeredAt)}</p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Origin GPS</p>
-                <p className="m-0 text-base font-medium text-[#20473d]">
-                  {resultData.regionLabel} ({(Number(resultData.record.origin_lat) / 1000000).toFixed(6)}, {(Number(resultData.record.origin_lng) / 1000000).toFixed(6)})
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">IPFS Image</p>
-                <a
-                  href={resultData.imageUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-semibold text-[#176f52] no-underline"
-                >
-                  Open original image
-                </a>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">IPFS Metadata</p>
-                <a
-                  href={resultData.metadataUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-semibold text-[#176f52] no-underline"
-                >
-                  Open attestation metadata
-                </a>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Metadata Hash</p>
-                <p className="m-0 break-all font-mono text-sm text-[#20473d]">{resultData.metadataHash || "-"}</p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Provenance Signer</p>
-                <p className="m-0 break-all font-mono text-sm text-[#20473d]">{resultData.provenanceSigner || "-"}</p>
-              </div>
-
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Device Signature</p>
-                <p className="m-0 text-base font-medium text-[#20473d]">
-                  {resultData.hasDeviceSignature ? "Present" : "Missing"}
-                </p>
-              </div>
-
-              {resultData.registrationTxHash && (
-                <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                  <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Registration Tx</p>
-                  <a
-                    href={"https://sepolia.etherscan.io/tx/" + resultData.registrationTxHash}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-semibold text-[#176f52] no-underline"
-                  >
-                    View on Etherscan
-                  </a>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="max-w-4xl">
-            <CardHeader className="pb-2">
-              <CardTitle>Nonce Replay Protection</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3 text-[#355]">
-              <p className="m-0">Nonce: <span className="break-all font-mono">{resultData.nonce}</span></p>
-              <p className="m-0">Pre-check status: {resultData.nonceUsed ? "Already used (possible replay)" : "Not used yet"}</p>
-              {typeof resultData.replayed === "boolean" && (
-                <p className="m-0">Checkpoint result: {resultData.replayed ? "Replay detected" : "Fresh scan recorded"}</p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={onCheckpointNonce} disabled={checkpointLoading}>
-                  {checkpointLoading ? "Checkpointing..." : "Checkpoint Nonce On-Chain"}
-                </Button>
-                {resultData.nonceTxUrl && (
-                  <a href={resultData.nonceTxUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">
-                    View nonce tx
-                  </a>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="max-w-4xl">
-            <CardHeader className="pb-2">
-              <CardTitle>Full Handler Chain</CardTitle>
+              <CardTitle>Custody History</CardTitle>
+              <CardDescription>Everyone who has held this product, in order, and whether they were verified.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
               {resultData.handlerChain.map((node, index) => (
@@ -568,20 +492,20 @@ export default function VerifyPage() {
                         width: 12,
                         height: 12,
                         borderRadius: "50%",
-                        background: node.verified ? "#1d9e75" : "#c53d3d",
+                        background: node.verified ? "#34d399" : "#f87171",
                         marginTop: 4
                       }}
                     />
                     {index < resultData.handlerChain.length - 1 && (
-                      <div style={{ width: 2, height: 36, background: "#d5e6e0", marginTop: 2 }} />
+                      <div style={{ width: 2, height: 36, background: "#26312b", marginTop: 2 }} />
                     )}
                   </div>
-                  <div className="rounded-xl border border-[#dcebe5] bg-[#f8fcfb] p-3">
-                    <div className="font-semibold text-[#284f46]">{node.label}</div>
-                    <div className="font-mono text-[#466]">
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <div className="font-semibold text-[#f3f6f4]">{node.label}</div>
+                    <div className="font-mono text-[#aebbb5]">
                       {truncateAddress(node.wallet)}
                     </div>
-                    <div className="text-[#577]">{node.timestamp ? formatDate(node.timestamp) : "Timestamp unavailable"}</div>
+                    <div className="text-[#8a9891]">{node.timestamp ? formatDate(node.timestamp) : "Timestamp unavailable"}</div>
                     <div className="mt-1">
                       <Badge variant={node.verified ? "default" : "warm"}>{node.verified ? "Verified" : "Unverified"}</Badge>
                     </div>
@@ -591,19 +515,138 @@ export default function VerifyPage() {
             </CardContent>
           </Card>
 
-          <Card className="max-w-4xl">
-            <CardHeader className="pb-2">
-              <CardTitle>Terroir Score Demo</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3 text-[#466]">
-              <p className="m-0">
-                Transfer this product through an unverified wallet to see the score drop.
-              </p>
-              <Link href={"/transfer?hash=" + resultData.hash} className="w-fit no-underline">
-                <Button>Go to Transfer Demo</Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <button
+            type="button"
+            onClick={() => setShowDetails((prev) => !prev)}
+            className="w-fit text-sm font-semibold text-[#34d399] hover:text-[#4ade80] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0f0e] rounded"
+          >
+            {showDetails ? "Hide technical details" : "Show technical details"}
+          </button>
+
+          {showDetails && (
+            <>
+              <Card className="max-w-4xl">
+                <CardHeader className="pb-2">
+                  <CardTitle>Product Record</CardTitle>
+                  <CardDescription>The underlying registration data this verification was checked against.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Product</p>
+                    <p className="m-0 text-lg font-semibold text-[#f3f6f4]">
+                      {resultData.record.productName} ({resultData.record.giTag})
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Artisan</p>
+                    <p className="m-0 text-base font-medium text-[#f3f6f4]">{resultData.artisan?.name || "Unknown"}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Craft Type</p>
+                    <p className="m-0 text-base font-medium text-[#f3f6f4]">{resultData.artisan?.craft || "Unknown"}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Artisan Identity ID</p>
+                    <p className="m-0 text-base font-semibold text-[#f3f6f4]">{resultData.sbtId}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Registered At</p>
+                    <p className="m-0 text-base font-medium text-[#f3f6f4]">{formatDate(resultData.record.registeredAt)}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Origin GPS</p>
+                    <p className="m-0 text-base font-medium text-[#f3f6f4]">
+                      {resultData.regionLabel} ({(Number(resultData.record.origin_lat) / 1000000).toFixed(6)}, {(Number(resultData.record.origin_lng) / 1000000).toFixed(6)})
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Original Photo</p>
+                    <a
+                      href={resultData.imageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-[#34d399] no-underline"
+                    >
+                      Open original image
+                    </a>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Registration Record</p>
+                    <a
+                      href={resultData.metadataUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-[#34d399] no-underline"
+                    >
+                      Open full record
+                    </a>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Record Hash</p>
+                    <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{resultData.metadataHash || "-"}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Provenance Signer</p>
+                    <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{resultData.provenanceSigner || "-"}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Device Signature</p>
+                    <p className="m-0 text-base font-medium text-[#f3f6f4]">
+                      {resultData.hasDeviceSignature ? "Present" : "Missing"}
+                    </p>
+                  </div>
+
+                  {resultData.registrationTxHash && (
+                    <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                      <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Registration Tx</p>
+                      <a
+                        href={"https://sepolia.etherscan.io/tx/" + resultData.registrationTxHash}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold text-[#34d399] no-underline"
+                      >
+                        View on Etherscan
+                      </a>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="max-w-4xl">
+                <CardHeader className="pb-2">
+                  <CardTitle>Replay Protection</CardTitle>
+                  <CardDescription>Prevents someone from reusing a copy of this exact scan elsewhere.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 text-[#aebbb5]">
+                  <p className="m-0">Scan code: <span className="break-all font-mono">{resultData.nonce}</span></p>
+                  <p className="m-0">Status: {resultData.nonceUsed ? "Already used (possible replay)" : "Not used yet"}</p>
+                  {typeof resultData.replayed === "boolean" && (
+                    <p className="m-0">Checkpoint result: {resultData.replayed ? "Replay detected" : "Fresh scan recorded"}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" onClick={onCheckpointNonce} disabled={checkpointLoading}>
+                      {checkpointLoading ? "Recording..." : "Record This Scan"}
+                    </Button>
+                    {resultData.nonceTxUrl && (
+                      <a href={resultData.nonceTxUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#34d399] no-underline">
+                        View transaction
+                      </a>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </>
       )}
     </section>

@@ -20,6 +20,7 @@ import {
   getProductNftOwner,
   markEscrowShipped,
   mintProductTwin,
+  previewRoyaltySettlement,
   transferProduct,
   verifyProduct
 } from "../../src/utils/contract";
@@ -84,6 +85,13 @@ export default function TransferPage() {
   const [escrowLookupId, setEscrowLookupId] = useState("");
   const [connectedWallet, setConnectedWallet] = useState("");
   const [buyerShareLink, setBuyerShareLink] = useState("");
+
+  const [escrowPreview, setEscrowPreview] = useState(null);
+  const [escrowPreviewError, setEscrowPreviewError] = useState("");
+  const [escrowPreviewLoading, setEscrowPreviewLoading] = useState(false);
+
+  const [completionPreview, setCompletionPreview] = useState(null);
+  const [completionPreviewError, setCompletionPreviewError] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -197,6 +205,44 @@ export default function TransferPage() {
     };
   }, [escrowTokenId]);
 
+  useEffect(() => {
+    const tokenValid = /^\d+$/.test(String(escrowTokenId)) && Number(escrowTokenId) > 0;
+    const amountValid = Number(escrowAmountEth) > 0;
+
+    if (escrowStep !== 1 || !tokenValid || !amountValid) {
+      setEscrowPreview(null);
+      setEscrowPreviewError("");
+      return;
+    }
+
+    let cancelled = false;
+    setEscrowPreviewLoading(true);
+    setEscrowPreviewError("");
+
+    const timer = setTimeout(async () => {
+      try {
+        const preview = await loadRoyaltyPreview(escrowTokenId, escrowAmountEth);
+        if (!cancelled) {
+          setEscrowPreview(preview);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setEscrowPreview(null);
+          setEscrowPreviewError(mapRoyaltyPreviewError(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setEscrowPreviewLoading(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [escrowTokenId, escrowAmountEth, escrowStep]);
+
   function truncateAddress(address) {
     if (!address) {
       return "-";
@@ -212,6 +258,10 @@ export default function TransferPage() {
     return handlers[handlers.length - 1];
   }
 
+  // Used only by the hidden Direct Transfer card below (ESCROW_ONLY_MODE = true).
+  // Not part of the active escrow flow, which now gets its royalty figures from
+  // the contract via previewRoyaltySettlement(). Candidate for removal together
+  // with the Direct Transfer card in a future cleanup pass.
   function calculateRoyaltyPercent(transferNumber) {
     const n = Math.max(1, Number(transferNumber || 1));
     return 40 / Math.sqrt(n);
@@ -470,6 +520,21 @@ export default function TransferPage() {
     }
   }
 
+  function mapRoyaltyPreviewError(error) {
+    const raw = String(error?.shortMessage || error?.message || "").toLowerCase();
+    if (raw.includes("unknown token")) {
+      return "This NFT token wasn't minted through the artisan royalty flow, so a royalty preview isn't available for it.";
+    }
+    return "Could not load royalty preview right now.";
+  }
+
+  async function loadRoyaltyPreview(tokenId, saleEth) {
+    const result = await previewRoyaltySettlement(Number(tokenId), saleEth);
+    const saleValue = Number(saleEth || 0);
+    const artisanPercent = saleValue > 0 ? (Number(result.artisanAmountEth) / saleValue) * 100 : 0;
+    return { ...result, saleEth: String(saleEth), artisanPercent };
+  }
+
   function getEscrowStatusLabel(status) {
     const labels = {
       0: "None",
@@ -566,6 +631,11 @@ export default function TransferPage() {
       return "Transaction rejected in wallet.";
     }
 
+    const looksLikeRawJsError = /cannot read propert|is not a function|is not defined|undefined is not|null is not|unexpected token|failed to fetch/i.test(lower);
+    if (looksLikeRawJsError) {
+      return fallbackMessage;
+    }
+
     return raw || fallbackMessage;
   }
 
@@ -577,6 +647,8 @@ export default function TransferPage() {
     }
 
     setEscrowLoading(true);
+    setCompletionPreview(null);
+    setCompletionPreviewError("");
     try {
       const details = await getEscrowDetails(id);
       setEscrowId(String(id));
@@ -614,8 +686,8 @@ export default function TransferPage() {
   async function onCreateEscrow(event) {
     event.preventDefault();
 
-    if (!escrowTokenId) {
-      setEscrowStatusText("Token ID is required.");
+    if (!escrowTokenId || !/^\d+$/.test(String(escrowTokenId)) || Number(escrowTokenId) <= 0) {
+      setEscrowStatusText("Enter a valid numeric Token ID.");
       return;
     }
 
@@ -625,8 +697,8 @@ export default function TransferPage() {
       return;
     }
 
-    if (!escrowAmountEth) {
-      setEscrowStatusText("Please enter escrow amount.");
+    if (!escrowAmountEth || !Number.isFinite(Number(escrowAmountEth)) || Number(escrowAmountEth) <= 0) {
+      setEscrowStatusText("Please enter an escrow amount greater than 0.");
       return;
     }
 
@@ -645,7 +717,15 @@ export default function TransferPage() {
       return;
     }
 
-    const connectedBuyer = (await getConnectedAddress()).toLowerCase();
+    let connectedBuyer;
+    try {
+      connectedBuyer = (await getConnectedAddress()).toLowerCase();
+    } catch (error) {
+      const raw = extractReadableError(error, "Connect your wallet to continue.");
+      setEscrowStatusText(mapEscrowError(raw, "Connect your wallet to continue."));
+      return;
+    }
+
     if (connectedBuyer === String(derivedSeller).toLowerCase()) {
       setEscrowStatusText(
         "Escrow requires two wallets. Switch to a buyer wallet different from seller " + truncateAddress(derivedSeller) + "."
@@ -741,7 +821,7 @@ export default function TransferPage() {
 
       if (!resolvedTokenId) {
         throw new Error(
-          "No ProductNFT mint found for current owner/artisan/connected wallet on Sepolia. Load product hash first or mint NFT in register flow."
+          "Couldn't find a minted token for the current owner/artisan/connected wallet automatically — enter the Token ID manually."
         );
       }
 
@@ -949,11 +1029,24 @@ export default function TransferPage() {
         return;
       }
 
+      setCompletionPreview(null);
+      setCompletionPreviewError("");
+      let preSettlementPreview = null;
+      try {
+        preSettlementPreview = await loadRoyaltyPreview(details.tokenId, details.salePriceEth);
+      } catch (previewError) {
+        setCompletionPreviewError(mapRoyaltyPreviewError(previewError));
+      }
+
       setEscrowStatusText("Confirming delivery and releasing escrow funds...");
       await confirmEscrowReceived(Number(escrowId));
       await loadEscrow(escrowId);
       setEscrowStep(4);
       setEscrowStatusText("Escrow completed. Funds settled and NFT transferred.");
+      if (preSettlementPreview) {
+        setCompletionPreview(preSettlementPreview);
+        setCompletionPreviewError("");
+      }
       try {
         const liveOwner = await getProductNftOwner(Number(details.tokenId));
         setNftOwnerLive(liveOwner);
@@ -1007,21 +1100,23 @@ export default function TransferPage() {
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Escrow Product Transfer</h1>
-        <p className="m-0 text-[#49665e]">Escrow-only flow: buyer creates escrow, seller marks shipped, buyer confirms delivery.</p>
-        <p className="m-0 text-sm text-[#577]">Network: Sepolia. Amount fields use Sepolia ETH (testnet), not mainnet ETH.</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Escrow Product Transfer
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Escrow-only flow: buyer creates escrow, seller marks shipped, buyer confirms delivery.</p>
+        <p className="m-0 text-sm text-[#8a9891]">Network: Sepolia. Amount fields use Sepolia ETH (testnet), not mainnet ETH.</p>
       </div>
 
-      <Card className="max-w-4xl border-[#dbe9e3] bg-[#f7fcfa]">
+      <Card className="max-w-4xl border-[#26312b] bg-[#131917]">
         <CardHeader className="pb-2">
           <CardTitle>Escrow Role Guide</CardTitle>
           <CardDescription>Use only these roles for this page.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-2 text-[#355]">
+        <CardContent className="grid gap-2 text-[#aebbb5]">
           <p className="m-0">1. Buyer wallet: create escrow (must be different from NFT owner).</p>
           <p className="m-0">2. Seller wallet: mark shipped (must be NFT owner).</p>
           <p className="m-0">3. Buyer wallet: confirm received.</p>
-          <p className="m-0 text-sm text-[#577]">Provenance owner and NFT owner can differ. Escrow always uses NFT owner as seller.</p>
+          <p className="m-0 text-sm text-[#8a9891]">Provenance owner and NFT owner can differ. Escrow always uses NFT owner as seller.</p>
         </CardContent>
       </Card>
 
@@ -1029,7 +1124,7 @@ export default function TransferPage() {
         <CardHeader className="pb-2">
           <CardTitle>Escrow Transfer (Recommended)</CardTitle>
           <CardDescription>
-            Minimal demo flow: create escrow → mark shipped → confirm received.
+            Three steps: create escrow → mark shipped → confirm received.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1047,7 +1142,7 @@ export default function TransferPage() {
             <Button
               suppressHydrationWarning
               type="button"
-              variant="outline"
+              variant="secondary"
               className="w-fit"
               disabled={tokenLookupLoading || escrowLoading}
               onClick={onAutoFillTokenId}
@@ -1058,7 +1153,7 @@ export default function TransferPage() {
             <Button
               suppressHydrationWarning
               type="button"
-              variant="outline"
+              variant="secondary"
               className="w-fit"
               disabled={mintingFromProduct || escrowLoading || !recordState?.record}
               onClick={onMintNftFromLoadedProduct}
@@ -1077,7 +1172,36 @@ export default function TransferPage() {
               placeholder="Price (Sepolia ETH)"
             />
 
-            <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 text-sm text-[#466]">
+            {escrowStep === 1 && (escrowPreviewLoading || escrowPreview || escrowPreviewError) && (
+              <Card className="border-[#1f4a38] bg-[#0f2e22]">
+                <CardHeader className="pb-2">
+                  <CardTitle>Royalty Preview</CardTitle>
+                  <CardDescription>What the artisan and seller will actually receive, from the contract.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2 text-[#aebbb5]">
+                  {escrowPreviewLoading && <p className="m-0">Loading royalty preview...</p>}
+                  {!escrowPreviewLoading && escrowPreviewError && (
+                    <p className="m-0 text-[#fbbf24]">{escrowPreviewError}</p>
+                  )}
+                  {!escrowPreviewLoading && escrowPreview && (
+                    <>
+                      <p className="m-0">This will be resale #{escrowPreview.transferId} for this piece.</p>
+                      <p className="m-0 text-base font-semibold text-[#4ade80]">
+                        Artisan receives: {escrowPreview.artisanAmountEth} ETH ({escrowPreview.artisanPercent.toFixed(2)}%)
+                      </p>
+                      <p className="m-0">Seller receives: {escrowPreview.sellerAmountEth} ETH</p>
+                      {escrowPreview.penaltyBps > 0 && (
+                        <p className="m-0 text-sm text-[#fbbf24]">
+                          Reduced from the standard rate due to a compliance penalty on this artisan's record.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 text-sm text-[#aebbb5]">
               <p className="m-0">Provenance owner (this hash): {truncateAddress(currentOwner || escrowSeller)}</p>
               <p className="m-0 mt-1">NFT owner (this token): {truncateAddress(nftOwnerLive)}</p>
               {escrowId && <p className="m-0 mt-1">Escrow ID (auto): {escrowId}</p>}
@@ -1097,7 +1221,7 @@ export default function TransferPage() {
               <Button
                 suppressHydrationWarning
                 type="button"
-                variant="outline"
+                variant="secondary"
                 disabled={escrowLoading || !escrowLookupId}
                 onClick={() => loadEscrow(escrowLookupId)}
                 className="w-fit"
@@ -1107,12 +1231,13 @@ export default function TransferPage() {
             </div>
 
             {buyerShareLink && (
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 text-sm text-[#355]">
-                <p className="m-0 font-semibold">Buyer Confirm Link (share with friend)</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 text-sm text-[#aebbb5]">
+                <p className="m-0 font-semibold">Buyer Confirm Link (share with the buyer)</p>
                 <p className="m-0 mt-1 break-all">{buyerShareLink}</p>
                 {(buyerShareLink.includes("localhost") || buyerShareLink.includes("127.0.0.1")) && (
-                  <p className="m-0 mt-2 text-[#8a5b09]">
-                    This link is local to your PC. Set NEXT_PUBLIC_APP_URL in frontend/.env.local to your public URL.
+                  <p className="m-0 mt-2 text-[#fbbf24]">
+                    This link only opens on this computer right now — it won&apos;t work for someone else until the
+                    app is running somewhere both of you can reach.
                   </p>
                 )}
               </div>
@@ -1126,7 +1251,7 @@ export default function TransferPage() {
 
             {escrowStep === 2 && (
               <div className="flex flex-wrap gap-2">
-                <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onApproveTokenForEscrow} variant="outline" className="w-fit">
+                <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onApproveTokenForEscrow} variant="secondary" className="w-fit">
                   {escrowLoading ? "Working..." : "Approve Token"}
                 </Button>
                 <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onMarkShipped} variant="secondary" className="w-fit">
@@ -1142,14 +1267,42 @@ export default function TransferPage() {
             )}
 
             {escrowStep >= 4 && (
-              <Badge variant="default" className="w-fit">Escrow Completed</Badge>
+              <>
+                <Badge variant="default" className="w-fit">Escrow Completed</Badge>
+                {(completionPreview || completionPreviewError) && (
+                  <Card className="border-[#1f4a38] bg-[#0f2e22]">
+                    <CardHeader className="pb-2">
+                      <CardTitle>Payout Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-2 text-[#aebbb5]">
+                      {completionPreviewError && !completionPreview && (
+                        <p className="m-0 text-[#fbbf24]">{completionPreviewError}</p>
+                      )}
+                      {completionPreview && (
+                        <>
+                          <p className="m-0">This was resale #{completionPreview.transferId} for this piece.</p>
+                          <p className="m-0 text-base font-semibold text-[#4ade80]">
+                            Artisan received: {completionPreview.artisanAmountEth} ETH ({completionPreview.artisanPercent.toFixed(2)}%)
+                          </p>
+                          <p className="m-0">Seller received: {completionPreview.sellerAmountEth} ETH</p>
+                          {completionPreview.penaltyBps > 0 && (
+                            <p className="m-0 text-sm text-[#fbbf24]">
+                              Reduced from the standard rate due to a compliance penalty on this artisan's record.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </>
             )}
 
-            {escrowStatusText && <p className="m-0 text-[#355]">{escrowStatusText}</p>}
+            {escrowStatusText && <p className="m-0 text-[#aebbb5]">{escrowStatusText}</p>}
 
             {escrowData && (
-              <Card className="border-[#dbe9e3] bg-[#f9fcfb]">
-                <CardContent className="grid gap-2 pt-6 text-[#355]">
+              <Card className="border-[#26312b] bg-[#131917]">
+                <CardContent className="grid gap-2 pt-6 text-[#aebbb5]">
                   <p className="m-0">Escrow ID: {escrowData.id}</p>
                   <p className="m-0">Token ID: {escrowData.tokenId}</p>
                   <p className="m-0">Buyer: {truncateAddress(escrowData.buyer)}</p>
@@ -1186,7 +1339,7 @@ export default function TransferPage() {
         </CardContent>
       </Card>
 
-      {status && <p className="m-0 text-[#355]">{status}</p>}
+      {status && <p className="m-0 text-[#aebbb5]">{status}</p>}
 
       {recordState?.record && (
         <>
@@ -1195,26 +1348,26 @@ export default function TransferPage() {
               <CardTitle>Current Product State</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product</p>
-                <p className="m-0 text-lg font-semibold text-[#20473d]">{recordState.record.productName}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Product</p>
+                <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{recordState.record.productName}</p>
               </div>
 
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Current Owner</p>
-                <p className="m-0 font-mono text-base font-medium text-[#20473d]">{truncateAddress(currentOwner)}</p>
-                <p className="m-0 mt-1 text-xs text-[#577]">(Provenance registry owner)</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Current Owner</p>
+                <p className="m-0 font-mono text-base font-medium text-[#f3f6f4]">{truncateAddress(currentOwner)}</p>
+                <p className="m-0 mt-1 text-xs text-[#8a9891]">(Provenance registry owner)</p>
               </div>
 
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">NFT Owner (Live)</p>
-                <p className="m-0 font-mono text-base font-medium text-[#20473d]">{truncateAddress(nftOwnerLive)}</p>
-                <p className="m-0 mt-1 text-xs text-[#577]">Updated by escrow completion</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">NFT Owner (Live)</p>
+                <p className="m-0 font-mono text-base font-medium text-[#f3f6f4]">{truncateAddress(nftOwnerLive)}</p>
+                <p className="m-0 mt-1 text-xs text-[#8a9891]">Updated by escrow completion</p>
               </div>
 
-              <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Transfer Count</p>
-                <p className="m-0 text-lg font-semibold text-[#20473d]">{String(currentTransferCount)}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Transfer Count</p>
+                <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{String(currentTransferCount)}</p>
               </div>
 
               <div className="md:col-span-2 md:max-w-xl">
@@ -1243,7 +1396,7 @@ export default function TransferPage() {
                     placeholder="New owner wallet address or ENS"
                   />
 
-                  {ensInfo && <p className="m-0 text-[#577]">{ensInfo}</p>}
+                  {ensInfo && <p className="m-0 text-[#8a9891]">{ensInfo}</p>}
 
                   <Input
                     suppressHydrationWarning
@@ -1256,26 +1409,26 @@ export default function TransferPage() {
                     placeholder="Buyer payment (Sepolia ETH)"
                   />
 
-                  <Card className="border-[#dbe9e3] bg-[#f9fcfb]">
+                  <Card className="border-[#26312b] bg-[#131917]">
                     <CardHeader className="pb-2">
                       <CardTitle>Quadratic Royalty Calculator</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid gap-4 text-[#355]">
+                    <CardContent className="grid gap-4 text-[#aebbb5]">
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
-                          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Transfer Number</p>
-                          <p className="m-0 text-2xl font-bold text-[#20473d]">{nextTransferNumber}</p>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Transfer Number</p>
+                          <p className="m-0 text-2xl font-bold text-[#f3f6f4]">{nextTransferNumber}</p>
                         </div>
-                        <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
-                          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Current Royalty</p>
-                          <p className="m-0 text-2xl font-bold text-[#1f6d50]">{royaltyPercent.toFixed(2)}%</p>
+                        <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Current Royalty</p>
+                          <p className="m-0 text-2xl font-bold text-[#4ade80]">{royaltyPercent.toFixed(2)}%</p>
                         </div>
                       </div>
 
-                      <p className="m-0 text-sm text-[#466]">Formula: royalty = 40% / sqrt(N)</p>
+                      <p className="m-0 text-sm text-[#aebbb5]">Formula: royalty = 40% / sqrt(N)</p>
 
-                      <div className="rounded-xl border border-[#d5e7df] bg-white p-3">
-                        <p className="mb-2 mt-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Decay Curve Samples</p>
+                      <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                        <p className="mb-2 mt-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Decay Curve Samples</p>
                         <div className="flex min-h-32 items-end gap-3">
                           {decaySamples.map((item) => (
                             <div key={item.n} className="grid flex-1 justify-items-center gap-1.5">
@@ -1284,23 +1437,23 @@ export default function TransferPage() {
                                   width: "100%",
                                   maxWidth: 56,
                                   height: Math.max(20, item.percent * 2),
-                                  background: "#7ec9b1",
-                                  border: "1px solid #5eb39a",
+                                  background: "#34d399",
+                                  border: "1px solid #2bbf89",
                                   borderRadius: 8
                                 }}
                               />
-                              <div className="text-xs text-[#466]">N={item.n}</div>
-                              <div className="text-xs font-semibold text-[#274f45]">{item.percent}%</div>
+                              <div className="text-xs text-[#aebbb5]">N={item.n}</div>
+                              <div className="text-xs font-semibold text-[#f3f6f4]">{item.percent}%</div>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-[#9fd8c0] bg-[#e8f8f1] p-3">
-                        <p className="m-0 text-base font-semibold text-[#1f6d50]">
+                      <div className="rounded-xl border border-[#1f4a38] bg-[#0f2e22] p-3">
+                        <p className="m-0 text-base font-semibold text-[#4ade80]">
                           Artisan payout: {artisanPayment.toFixed(6)} ETH
                         </p>
-                        <p className="m-0 text-sm text-[#355]">from buyer payment of {buyerPayment.toFixed(6)} ETH</p>
+                        <p className="m-0 text-sm text-[#aebbb5]">from buyer payment of {buyerPayment.toFixed(6)} ETH</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1309,11 +1462,11 @@ export default function TransferPage() {
                     <div
                       className="rounded-xl border px-3 py-2"
                       style={{
-                        background: newOwnerVerified ? "#e2f7ed" : "#fff0e0",
-                        borderColor: newOwnerVerified ? "#9fd8c0" : "#e7c09f"
+                        background: newOwnerVerified ? "#0f2e22" : "#332408",
+                        borderColor: newOwnerVerified ? "#1f4a38" : "#4a3416"
                       }}
                     >
-                      <div className="font-semibold" style={{ color: newOwnerVerified ? "#186d4c" : "#8a5b09" }}>
+                      <div className="font-semibold" style={{ color: newOwnerVerified ? "#4ade80" : "#fbbf24" }}>
                         {newOwnerVerified
                           ? "Score will remain " + currentTerroir + " — verified handler"
                           : "Score will drop from " + currentTerroir + " to " + projectedTerroir + " — unverified handler detected"}
@@ -1326,7 +1479,7 @@ export default function TransferPage() {
                   </Button>
 
                   {stepProgress && (
-                    <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
+                    <div className="rounded-lg border border-dashed border-[#35443c] bg-[#1a211e] px-3 py-2 text-[#34d399]">
                       {stepProgress}
                     </div>
                   )}
@@ -1336,22 +1489,22 @@ export default function TransferPage() {
           )}
 
           {!ESCROW_ONLY_MODE && transferSuccess && (
-            <Card className="max-w-4xl border-[#cde6dc] bg-[#f4fbf8]">
+            <Card className="max-w-4xl border-[#1f4a38] bg-[#0f2e22]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-[#1f6d50]">Transfer Completed</CardTitle>
+                <CardTitle className="text-[#4ade80]">Transfer Completed</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-2 text-[#355]">
+              <CardContent className="grid gap-2 text-[#aebbb5]">
                 <p className="m-0">New Terroir Score: {transferSuccess.newTerroir}</p>
                 <p className="m-0">Artisan payment: {transferSuccess.artisanPaymentEth} ETH</p>
                 {transferSuccess.retailerQrUrl && (
                   <Link href={transferSuccess.retailerQrUrl} className="w-fit no-underline">
-                    <Button type="button" variant="outline">Generate Retailer QR</Button>
+                    <Button type="button" variant="secondary">Generate Retailer QR</Button>
                   </Link>
                 )}
                 {transferSuccess.txUrl && (
                   <p className="m-0">
                     Etherscan:{" "}
-                    <a href={transferSuccess.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#176f52] no-underline">View tx</a>
+                    <a href={transferSuccess.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#34d399] no-underline">View tx</a>
                   </p>
                 )}
               </CardContent>
@@ -1359,10 +1512,10 @@ export default function TransferPage() {
           )}
 
           <Card className="max-w-4xl">
-            <CardContent className="pt-6 text-[#466]">
+            <CardContent className="pt-6 text-[#aebbb5]">
               <p className="m-0">
                 Consumer verification link:{" "}
-                <Link href={"/verify?hash=" + hash} className="font-semibold text-[#176f52] no-underline">
+                <Link href={"/verify?hash=" + hash} className="font-semibold text-[#34d399] no-underline">
                   /verify?hash={hash}
                 </Link>
               </p>
