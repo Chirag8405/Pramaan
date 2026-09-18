@@ -663,11 +663,17 @@ export default function ArtisanPage() {
             )}
 
             {scoreInfo && (
-              <div
-                className="rounded-xl border px-3 py-2 font-semibold"
-                style={{ background: scoreInfo.bg, color: scoreInfo.color, borderColor: scoreInfo.color }}
-              >
-                Score: {craftScore} - {scoreInfo.text}
+              <div className="grid gap-1.5">
+                <div
+                  className="rounded-xl border px-3 py-2 font-semibold"
+                  style={{ background: scoreInfo.bg, color: scoreInfo.color, borderColor: scoreInfo.color }}
+                >
+                  Craft Score: {craftScore} - {scoreInfo.text}
+                </div>
+                <p className="m-0 text-xs text-[#8a9891]">
+                  This Craft Score is a quick local check gating artisan registration only — a different,
+                  lighter mechanism from the on-chain Terroir Score shown on product pages after registration.
+                </p>
               </div>
             )}
 

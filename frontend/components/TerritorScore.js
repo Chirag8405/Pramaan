@@ -1,7 +1,11 @@
 "use client";
 
+import { Info } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Card, CardContent } from "./ui/card";
+
+const TERROIR_EXPLANATION =
+  "On-chain trust score for this specific product. It starts from the AI photo-authenticity check at registration, then adjusts as the product changes hands — dropping if an unverified handler joins the chain or if custody moves suspiciously fast.";
 
 function getScoreMeta(rawScore) {
   const score = Math.max(0, Math.min(100, Number(rawScore) || 0));
@@ -56,11 +60,21 @@ export default function TerritorScore({ score }) {
             {meta.score}
           </div>
           <div className="grid gap-1">
-            <div className="text-sm text-[#aebbb5]">Terroir Score</div>
+            <div className="flex items-center gap-1.5 text-sm text-[#aebbb5]">
+              Terroir Score
+              <Info
+                size={13}
+                className="cursor-help text-[#8a9891]"
+                aria-label={TERROIR_EXPLANATION}
+                title={TERROIR_EXPLANATION}
+              />
+            </div>
             <div className="text-[1.2rem] font-bold" style={{ color: meta.color }}>{meta.status}</div>
             <Badge variant="neutral" className="w-fit">Live Integrity Signal</Badge>
           </div>
         </div>
+
+        <p className="m-0 text-xs text-[#8a9891]">{TERROIR_EXPLANATION}</p>
 
         <div>
           <div
