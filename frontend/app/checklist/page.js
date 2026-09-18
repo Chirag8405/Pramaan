@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Badge } from "../../components/ui/badge";
+import { Card, CardContent } from "../../components/ui/card";
 
 const checklistItems = [
   { label: "Artisan Flow", href: "/artisan" },
@@ -12,35 +14,32 @@ const checklistItems = [
 
 export default function ChecklistPage() {
   return (
-    <section style={{ display: "grid", gap: 14 }}>
-      <h1 style={{ margin: 0 }}>Quick Demo Checklist</h1>
-      <p style={{ margin: 0, color: "#466" }}>
-        Open each flow directly while presenting to judges.
-      </p>
+    <section className="grid gap-6">
+      <div className="grid gap-2">
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Quick Demo Checklist
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Open each flow directly while presenting to judges.</p>
+      </div>
 
-      <div style={{ display: "grid", gap: 10, maxWidth: 760 }}>
+      <div className="grid max-w-2xl gap-3">
         {checklistItems.map((item, index) => (
-          <div key={item.href} style={cardStyle}>
-            <div style={{ color: "#355", fontWeight: 700 }}>{index + 1}. {item.label}</div>
-            <Link href={item.href} style={linkStyle}>{item.href}</Link>
-          </div>
+          <Card key={item.href + index}>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+              <div className="flex items-center gap-3">
+                <Badge>{index + 1}</Badge>
+                <span className="font-semibold text-[#f3f6f4]">{item.label}</span>
+              </div>
+              <Link
+                href={item.href}
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-[#35443c] bg-[#131917] px-4 py-2 text-sm font-semibold text-[#34d399] no-underline transition hover:bg-[#1a211e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34d399] focus-visible:ring-offset-2 focus-visible:ring-offset-[#131917]"
+              >
+                {item.href}
+              </Link>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </section>
   );
 }
-
-const cardStyle = {
-  background: "#fff",
-  border: "1px solid #d9ebe4",
-  borderRadius: 12,
-  padding: 12,
-  display: "grid",
-  gap: 6
-};
-
-const linkStyle = {
-  color: "#176f52",
-  fontWeight: 700,
-  textDecoration: "none"
-};
