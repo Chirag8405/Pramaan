@@ -405,37 +405,6 @@ export default function ArtisanPage() {
     await runCraftAnalysis(file, form.craft);
   }
 
-  async function onTryFakeDemo() {
-    setMessage("");
-    setSuccess(null);
-    setStepProgress("");
-
-    try {
-      setIsAnalyzing(true);
-
-      const response = await fetch("https://picsum.photos/640/480");
-      const blob = await response.blob();
-      const demoFile = new File([blob], "stock-photo-demo.jpg", { type: blob.type || "image/jpeg" });
-
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl);
-      }
-
-      setCraftImage(demoFile);
-      setImagePreviewUrl(URL.createObjectURL(demoFile));
-
-      // Run detector to mimic the real path, then force stable demo output.
-      await detectCraft(demoFile, form.craft);
-      setCraftScore(22);
-      setMessage("This stock image scored 22. Registration blocked at the contract level.");
-    } catch (_error) {
-      setCraftScore(22);
-      setMessage("This stock image scored 22. Registration blocked at the contract level.");
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }
-
   useEffect(() => {
     return () => {
       if (imagePreviewUrl) {
@@ -553,7 +522,7 @@ export default function ArtisanPage() {
         <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
           Register as Artisan
         </h1>
-        <p className="m-0 text-[#aebbb5]">Only submissions with craft score 60+ pass the on-chain gate.</p>
+        <p className="m-0 text-[#aebbb5]">Upload a clear photo of your craft in progress — submissions scoring below 60 are rejected automatically.</p>
       </div>
 
       <div>
@@ -702,15 +671,6 @@ export default function ArtisanPage() {
               </div>
             )}
 
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={onTryFakeDemo}
-              className="w-fit"
-            >
-              Try Fake Artisan Demo
-            </Button>
-
             <Button disabled={registerDisabled} type="submit" className="w-fit">
               {loading ? "Submitting..." : "Register Artisan"}
             </Button>
@@ -729,8 +689,11 @@ export default function ArtisanPage() {
       {success && (
         <Card className="max-w-3xl border-[#1f4a38] bg-[#0f2e22] text-[#4ade80]">
           <CardContent className="grid gap-1 p-4">
-            <div className="font-semibold">Soulbound Identity minted successfully.</div>
-            <div>SBT Token ID: {success.tokenId}</div>
+            <div className="font-semibold">Your artisan identity is now on the permanent record.</div>
+            <div>Identity ID: {success.tokenId}</div>
+            <div className="text-xs text-[#4ade80]/80">
+              This identity is permanently tied to your wallet — it can't be transferred or sold, so no one else can claim your track record.
+            </div>
             {success.txUrl && (
               <a href={success.txUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#4ade80] underline">
                 View on Etherscan
