@@ -476,7 +476,7 @@ export default function RegisterProductPage() {
         <Card className="max-w-2xl border-[#4a1f1f]">
           <CardContent className="grid gap-2 p-4 text-[#aebbb5]">
             {walletAddress && <p className="m-0">Wallet: {walletAddress}</p>}
-            <p className="m-0">SBT Token ID: {tokenId}</p>
+            <p className="m-0">Artisan Identity ID: {tokenId}</p>
             <Link href="/artisan" className="w-fit no-underline">
               <Button>Go to Artisan Registration</Button>
             </Link>
@@ -502,13 +502,13 @@ export default function RegisterProductPage() {
         <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
           Register Product
         </h1>
-        <p className="m-0 text-[#aebbb5]">Upload product proof, hash it, pin to IPFS, then register on-chain.</p>
+        <p className="m-0 text-[#aebbb5]">Upload a photo of your finished product to create its permanent provenance record.</p>
       </div>
 
       <Card className="max-w-4xl">
         <CardHeader className="pb-2">
           <CardTitle>Verified Artisan</CardTitle>
-          <CardDescription>This identity is eligible to register product twins.</CardDescription>
+          <CardDescription>This identity can register products under its own provenance record.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
@@ -522,7 +522,7 @@ export default function RegisterProductPage() {
           </div>
 
           <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">SBT Token ID</p>
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Artisan Identity ID</p>
             <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{tokenId}</p>
           </div>
 
@@ -558,8 +558,8 @@ export default function RegisterProductPage() {
 
       <Card className="max-w-3xl">
         <CardHeader className="pb-2">
-          <CardTitle>Product Metadata</CardTitle>
-          <CardDescription>Demo-friendly form with visible auto-filled logistics fields and background attestation security.</CardDescription>
+          <CardTitle>Product Details</CardTitle>
+          <CardDescription>Batch and lot numbers are filled in automatically; the record is signed and secured behind the scenes.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="grid gap-3">
