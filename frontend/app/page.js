@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, Fingerprint, Landmark, Leaf, ShieldCheck, Sparkles } from "lucide-react";
+import { BadgeCheck, Fingerprint, Landmark, Leaf, ShieldCheck, Sparkles } from "lucide-react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import GetStartedButton from "../components/GetStartedButton";
 
 const features = [
     {
@@ -95,12 +96,7 @@ export default function HomePage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-wrap gap-3">
-                    <Link href="/artisan">
-                        <Button size="lg" className="gap-2">
-                            Get Started
-                            <ArrowRight size={16} />
-                        </Button>
-                    </Link>
+                    <GetStartedButton />
                     <Link href="#core-features">
                         <Button size="lg" variant="secondary" type="button">
                             Explore Core Features
