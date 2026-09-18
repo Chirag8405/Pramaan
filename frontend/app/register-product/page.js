@@ -456,8 +456,10 @@ export default function RegisterProductPage() {
   if (checking) {
     return (
       <section className="grid gap-3">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register Product</h1>
-        <p className="m-0 text-[#49665e]">Checking artisan identity...</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register Product
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Checking artisan identity...</p>
       </section>
     );
   }
@@ -465,12 +467,14 @@ export default function RegisterProductPage() {
   if (!isVerified) {
     return (
       <section className="grid gap-4">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register Product</h1>
-        <p className="m-0 font-semibold text-[#8a1f1f]">
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register Product
+        </h1>
+        <p className="m-0 font-semibold text-[#f87171]">
           {statusText || "You must register as an artisan before registering products."}
         </p>
-        <Card className="max-w-2xl bg-[#fff9f9]">
-          <CardContent className="grid gap-2 p-4 text-[#49665e]">
+        <Card className="max-w-2xl border-[#4a1f1f]">
+          <CardContent className="grid gap-2 p-4 text-[#aebbb5]">
             {walletAddress && <p className="m-0">Wallet: {walletAddress}</p>}
             <p className="m-0">SBT Token ID: {tokenId}</p>
             <Link href="/artisan" className="w-fit no-underline">
@@ -495,8 +499,10 @@ export default function RegisterProductPage() {
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
-        <h1 className="m-0 text-3xl font-bold text-[#20473d]">Register Product</h1>
-        <p className="m-0 text-[#49665e]">Upload product proof, hash it, pin to IPFS, then register on-chain.</p>
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+          Register Product
+        </h1>
+        <p className="m-0 text-[#aebbb5]">Upload product proof, hash it, pin to IPFS, then register on-chain.</p>
       </div>
 
       <Card className="max-w-4xl">
@@ -505,33 +511,33 @@ export default function RegisterProductPage() {
           <CardDescription>This identity is eligible to register product twins.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 md:col-span-2">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Wallet</p>
-            <p className="m-0 break-all font-mono text-sm text-[#20473d]">{walletAddress}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3 md:col-span-2">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Wallet</p>
+            <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{walletAddress}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Name</p>
-            <p className="m-0 text-lg font-semibold text-[#20473d]">{artisan?.name || "-"}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Name</p>
+            <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{artisan?.name || "-"}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">SBT Token ID</p>
-            <p className="m-0 text-lg font-semibold text-[#20473d]">{tokenId}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">SBT Token ID</p>
+            <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{tokenId}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Craft Type</p>
-            <p className="m-0 text-base font-medium text-[#20473d]">{artisan?.craft || "-"}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Craft Type</p>
+            <p className="m-0 text-base font-medium text-[#f3f6f4]">{artisan?.craft || "-"}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">GI Region</p>
-            <p className="m-0 text-base font-medium text-[#20473d]">{artisan?.giRegion || giRegions[String(artisan?.craft || "")] || "-"}</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">GI Region</p>
+            <p className="m-0 text-base font-medium text-[#f3f6f4]">{artisan?.giRegion || giRegions[String(artisan?.craft || "")] || "-"}</p>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Aadhaar Status</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Aadhaar Status</p>
             <div className="mt-1">
               <Badge variant={artisan?.isAadhaarVerified ? "default" : "warm"}>
                 {artisan?.isAadhaarVerified ? "Verified" : "Not Verified"}
@@ -539,8 +545,8 @@ export default function RegisterProductPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3">
-            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Fraud Flag</p>
+          <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Fraud Flag</p>
             <div className="mt-1">
               <Badge variant={artisan?.isFraudulent ? "warm" : "default"}>
                 {artisan?.isFraudulent ? "Flagged" : "Clear"}
@@ -590,12 +596,12 @@ export default function RegisterProductPage() {
               <img
                 src={previewUrl}
                 alt="Product preview"
-                className="w-full max-w-md rounded-xl border border-[#d3e6df]"
+                className="w-full max-w-md rounded-xl border border-[#26312b]"
               />
             )}
 
             {productHash && (
-              <p className="m-0 font-mono text-[#2f5a50]">
+              <p className="m-0 font-mono text-[#34d399]">
                 Product hash: {getTruncatedHash(productHash)}
               </p>
             )}
@@ -603,12 +609,12 @@ export default function RegisterProductPage() {
             {aiChecking && (
               <div className="flex items-center gap-2">
                 <div className="spinner" />
-                <span className="text-[#355]">Checking craft authenticity...</span>
+                <span className="text-[#aebbb5]">Checking craft authenticity...</span>
               </div>
             )}
 
             {aiError && (
-              <div className="rounded-xl border border-[#e9bcbc] bg-[#fff5f5] px-3 py-2 font-semibold text-[#8a1f1f]">
+              <div className="rounded-xl border border-[#4a1f1f] bg-[#3a1414] px-3 py-2 font-semibold text-[#f87171]">
                 Could not run the AI authenticity check: {aiError}. Re-upload the image to retry.
               </div>
             )}
@@ -616,9 +622,9 @@ export default function RegisterProductPage() {
             {typeof aiScore === "number" && !aiChecking && !aiError && (
               <div className="grid gap-2">
                 <TerritorScore score={aiScore} />
-                {aiReason && <p className="m-0 text-sm text-[#49665e]">{aiReason}</p>}
+                {aiReason && <p className="m-0 text-sm text-[#aebbb5]">{aiReason}</p>}
                 {aiScore < 70 && (
-                  <div className="rounded-xl border border-[#e9bcbc] bg-[#fff5f5] px-3 py-2 font-semibold text-[#8a1f1f]">
+                  <div className="rounded-xl border border-[#4a1f1f] bg-[#3a1414] px-3 py-2 font-semibold text-[#f87171]">
                     AI authenticity check scored this image {aiScore}/100{trimmedAiReason ? " — " + trimmedAiReason : ""}.
                     Minimum 70 required — registration blocked.
                   </div>
@@ -631,7 +637,7 @@ export default function RegisterProductPage() {
             </Button>
 
             {stepProgress && (
-              <div className="rounded-lg border border-dashed border-[#b4d8cb] bg-[#eff8f4] px-3 py-2 text-[#2f5a50]">
+              <div className="rounded-lg border border-dashed border-[#35443c] bg-[#1a211e] px-3 py-2 text-[#34d399]">
                 {stepProgress}
               </div>
             )}
@@ -639,46 +645,46 @@ export default function RegisterProductPage() {
         </CardContent>
       </Card>
 
-      {statusText && <p className="m-0 text-[#355]">{statusText}</p>}
+      {statusText && <p className="m-0 text-[#aebbb5]">{statusText}</p>}
 
       {success && (
-        <Card className="max-w-4xl border-[#cde6dc] bg-[#f4fbf8]">
+        <Card className="max-w-4xl border-[#1f4a38] bg-[#0f2e22]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-[#1f6d50]">Registration Complete</CardTitle>
+            <CardTitle className="text-[#4ade80]">Registration Complete</CardTitle>
             <CardDescription>Product twin has been anchored successfully.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 text-[#355]">
-            <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product Hash</p>
-              <p className="m-0 break-all font-mono text-sm text-[#20473d]">{success.productHash}</p>
+          <CardContent className="grid gap-4 text-[#aebbb5]">
+            <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Product Hash</p>
+              <p className="m-0 break-all font-mono text-sm text-[#f3f6f4]">{success.productHash}</p>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Provenance Signer</p>
-                <p className="m-0 font-mono text-sm text-[#20473d]" title={success.provenanceSigner}>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Provenance Signer</p>
+                <p className="m-0 font-mono text-sm text-[#f3f6f4]" title={success.provenanceSigner}>
                   {getTruncatedAddress(success.provenanceSigner)}
                 </p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Production Date</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{success.productionDate}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Production Date</p>
+                <p className="m-0 text-base font-semibold text-[#f3f6f4]">{success.productionDate}</p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Batch ID</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{success.batchId}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Batch ID</p>
+                <p className="m-0 text-base font-semibold text-[#f3f6f4]">{success.batchId}</p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Lot and Size</p>
-                <p className="m-0 text-base font-semibold text-[#20473d]">{success.lotNumber} • {success.batchSize}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Lot and Size</p>
+                <p className="m-0 text-base font-semibold text-[#f3f6f4]">{success.lotNumber} • {success.batchSize}</p>
               </div>
 
-              <div className="rounded-xl border border-[#c9e2d8] bg-white p-3 md:col-span-2">
-                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Product NFT Token ID</p>
-                <p className="m-0 text-lg font-semibold text-[#20473d]">{success.mintedTokenId || "Auto-detect on Transfer page"}</p>
+              <div className="rounded-xl border border-[#26312b] bg-[#131917] p-3 md:col-span-2">
+                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Product NFT Token ID</p>
+                <p className="m-0 text-lg font-semibold text-[#f3f6f4]">{success.mintedTokenId || "Auto-detect on Transfer page"}</p>
               </div>
             </div>
 
@@ -721,8 +727,8 @@ export default function RegisterProductPage() {
         .spinner {
           width: 18px;
           height: 18px;
-          border: 2px solid #d5ebe3;
-          border-top-color: #1d9e75;
+          border: 2px solid #26312b;
+          border-top-color: #34d399;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
         }

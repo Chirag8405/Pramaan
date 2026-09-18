@@ -267,16 +267,18 @@ export default function RetailerVerifyPage() {
     return (
         <section className="grid gap-6">
             <div className="grid gap-2">
-                <h1 className="m-0 text-3xl font-bold text-[#17352d]">Retailer QR Verify</h1>
-                <p className="m-0 text-[#4a655d]">
+                <h1 className="m-0 font-[family-name:var(--font-display)] text-3xl font-bold tracking-tight text-[#f3f6f4]">
+                    Retailer QR Verify
+                </h1>
+                <p className="m-0 text-[#aebbb5]">
                     This tab is for shop verification at sale time. Distributor generates this QR and retailer scans it.
                 </p>
             </div>
 
-            <Card className="max-w-4xl border-slate-800 bg-slate-900 text-slate-100">
+            <Card className="max-w-4xl border-[#26312b] bg-[#131917] text-[#f3f6f4]">
                 <CardHeader className="pb-2">
-                    <CardTitle className="text-slate-100">Scan At Counter</CardTitle>
-                    <CardDescription className="text-slate-400">
+                    <CardTitle className="text-[#f3f6f4]">Scan At Counter</CardTitle>
+                    <CardDescription className="text-[#aebbb5]">
                         Open camera and scan product QR to jump directly into the hardware verification page.
                     </CardDescription>
                 </CardHeader>
@@ -285,7 +287,7 @@ export default function RetailerVerifyPage() {
                 </CardContent>
             </Card>
 
-            <Card className="max-w-4xl border-[#d5e4df]">
+            <Card className="max-w-4xl border-[#26312b]">
                 <CardHeader className="pb-2">
                     <CardTitle>Generate Working Demo QR</CardTitle>
                     <CardDescription>
@@ -293,20 +295,20 @@ export default function RetailerVerifyPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3">
-                    <div className="grid gap-2 rounded-xl border border-[#d5e4df] bg-[#f4fbf8] p-3">
-                        <p className="m-0 text-sm font-semibold text-[#1f5f4e]">Step 1: Autofill demo values</p>
+                    <div className="grid gap-2 rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                        <p className="m-0 text-sm font-semibold text-[#34d399]">Step 1: Autofill demo values</p>
                         <div className="flex flex-wrap gap-2">
                             <Button type="button" onClick={onLoadDemoData} disabled={demoLoading}>
                                 {demoLoading ? "Loading Demo..." : "Load Demo Data"}
                             </Button>
-                            <Button type="button" variant="outline" onClick={() => setBaseUrl(window.location.origin)}>
+                            <Button type="button" variant="secondary" onClick={() => setBaseUrl(window.location.origin)}>
                                 Use Current Base URL
                             </Button>
                         </div>
-                        {demoSource && <p className="m-0 text-xs text-[#48695f]">Loaded from: {demoSource}</p>}
+                        {demoSource && <p className="m-0 text-xs text-[#8a9891]">Loaded from: {demoSource}</p>}
                     </div>
 
-                    <p className="m-0 text-sm font-semibold text-[#1f5f4e]">Step 2: Confirm inputs</p>
+                    <p className="m-0 text-sm font-semibold text-[#34d399]">Step 2: Confirm inputs</p>
                     <Input
                         value={baseUrl}
                         onChange={(e) => setBaseUrl(e.target.value)}
@@ -331,63 +333,63 @@ export default function RetailerVerifyPage() {
                     />
 
                     <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" onClick={regenerateNonce}>Regenerate Nonce</Button>
+                        <Button type="button" variant="secondary" onClick={regenerateNonce}>Regenerate Nonce</Button>
                     </div>
 
                     {normalizedSecret && !secretSigner && (
-                        <p className="m-0 text-sm text-[#8a1f1f]">Secret format is invalid. Use a valid EVM private key.</p>
+                        <p className="m-0 text-sm text-[#f87171]">Secret format is invalid. Use a valid EVM private key.</p>
                     )}
 
-                    {signStatus && <p className="m-0 text-sm text-[#355]">{signStatus}</p>}
+                    {signStatus && <p className="m-0 text-sm text-[#aebbb5]">{signStatus}</p>}
 
                     {challenge && signature && !signatureValid && (
-                        <p className="m-0 text-sm text-[#8a5b09]">
+                        <p className="m-0 text-sm text-[#fbbf24]">
                             Hash or nonce changed since this QR was signed. Reload demo data or re-enter the secret to sign again.
                         </p>
                     )}
 
                     {expectedSigner && recoveredSigner && (
-                        <p className="m-0 text-sm text-[#355]">
+                        <p className="m-0 text-sm text-[#aebbb5]">
                             Signer check: {recoveredSigner.toLowerCase() === expectedSigner.toLowerCase() ? "Matched" : "Not matched"}
                         </p>
                     )}
 
                     {verifyUrl && (
-                        <div className="grid gap-3 rounded-xl border border-[#d5e4df] bg-[#f8fcfb] p-4">
-                            <p className="m-0 text-sm font-semibold text-[#1f5f4e]">Step 3: Scan this QR</p>
+                        <div className="grid gap-3 rounded-xl border border-[#26312b] bg-[#1a211e] p-4">
+                            <p className="m-0 text-sm font-semibold text-[#34d399]">Step 3: Scan this QR</p>
                             <div className="rounded-lg bg-white p-4 w-fit">
                                 <QRCodeSVG id="retailer-demo-qr" value={verifyUrl} size={220} />
                             </div>
 
                             <div className="grid gap-2">
-                                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#607b72]">Verification URL</p>
-                                <p className="m-0 break-all font-mono text-sm text-[#244940]">{verifyUrl}</p>
+                                <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">Verification URL</p>
+                                <p className="m-0 break-all font-mono text-sm text-[#aebbb5]">{verifyUrl}</p>
                             </div>
 
                             <div className="flex flex-wrap gap-2">
                                 <Button type="button" onClick={onCopyUrl}>Copy URL</Button>
-                                <Button type="button" variant="outline" onClick={onDownloadPng}>Download PNG</Button>
+                                <Button type="button" variant="secondary" onClick={onDownloadPng}>Download PNG</Button>
                                 <a href={verifyUrl} target="_blank" rel="noreferrer" className="no-underline">
-                                    <Button type="button" variant="outline">Open Verify Link</Button>
+                                    <Button type="button" variant="secondary">Open Verify Link</Button>
                                 </a>
                             </div>
                         </div>
                     )}
 
                     {!verifyUrl && (
-                        <p className="m-0 text-sm text-[#5f7b72]">
+                        <p className="m-0 text-sm text-[#aebbb5]">
                             Fill base URL, product hash, and secret to generate a QR.
                         </p>
                     )}
 
-                    {copyStatus && <p className="m-0 text-sm text-[#355]">{copyStatus}</p>}
+                    {copyStatus && <p className="m-0 text-sm text-[#aebbb5]">{copyStatus}</p>}
 
-                    <div className="rounded-xl border border-[#ead9b1] bg-[#fff8e8] p-3 text-sm text-[#7b5a13]">
+                    <div className="rounded-xl border border-[#4a3416] bg-[#332408] p-3 text-sm text-[#fbbf24]">
                         If you scan from a phone, localhost will not open there. Use your LAN IP or deployed URL in Base URL.
                     </div>
 
-                    <div className="rounded-xl border border-[#d5e4df] bg-[#f4fbf8] p-3">
-                        <p className="m-0 mb-2 text-sm font-semibold text-[#1f5f4e]">Owner handoff</p>
+                    <div className="rounded-xl border border-[#26312b] bg-[#1a211e] p-3">
+                        <p className="m-0 mb-2 text-sm font-semibold text-[#34d399]">Owner handoff</p>
                         <Link href="/transfer" className="no-underline">
                             <Button type="button">Transfer Owner</Button>
                         </Link>
