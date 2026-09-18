@@ -808,7 +808,7 @@ export default function TransferPage() {
 
       if (!resolvedTokenId) {
         throw new Error(
-          "No ProductNFT mint found for current owner/artisan/connected wallet on Sepolia. Load product hash first or mint NFT in register flow."
+          "Couldn't find a minted token for the current owner/artisan/connected wallet automatically — enter the Token ID manually."
         );
       }
 
