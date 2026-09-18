@@ -83,7 +83,10 @@ export default function HomePage() {
                     <Badge variant="warm" className="w-fit">
                         Pramaan - Sovereign Traceability System
                     </Badge>
-                    <CardTitle className="font-[family-name:var(--font-display)] text-3xl leading-tight tracking-tight md:text-5xl">
+                    <CardTitle
+                        as="h1"
+                        className="font-[family-name:var(--font-display)] text-3xl leading-tight tracking-tight md:text-5xl"
+                    >
                         Build Trust for Every Handmade Product
                     </CardTitle>
                     <CardDescription className="max-w-3xl text-base md:text-lg">

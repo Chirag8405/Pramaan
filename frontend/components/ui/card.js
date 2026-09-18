@@ -8,9 +8,9 @@ export function CardHeader({ className, ...props }) {
     return <div className={cn("p-6 pb-3", className)} {...props} />;
 }
 
-export function CardTitle({ className, ...props }) {
+export function CardTitle({ className, as: Tag = "h3", ...props }) {
     return (
-        <h3
+        <Tag
             className={cn(
                 "font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight text-[#f3f6f4]",
                 className

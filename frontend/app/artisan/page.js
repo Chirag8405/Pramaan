@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogInWithAnonAadhaar, useAnonAadhaar } from "@anon-aadhaar/react";
 import { Badge } from "../../components/ui/badge";
@@ -10,7 +11,13 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
 import { uploadToIPFS } from "../../src/utils/ipfs";
-import { connectWallet, getArtisan, isVerifiedArtisan, registerArtisan } from "../../src/utils/contract";
+import {
+  connectWallet,
+  getArtisan,
+  getConnectedAddressIfAvailable,
+  isVerifiedArtisan,
+  registerArtisan
+} from "../../src/utils/contract";
 
 const TRANSFER_EVENT_SIGNATURE =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -52,6 +59,7 @@ export default function ArtisanPage() {
   const [aadhaarConflict, setAadhaarConflict] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(null);
+  const [alreadyVerified, setAlreadyVerified] = useState(false);
 
   const anonStatus = anonAadhaar?.status || "logged-out";
   const isAnonVerified = anonStatus === "logged-in";
@@ -63,22 +71,25 @@ export default function ArtisanPage() {
   useEffect(() => {
     let active = true;
 
-    async function redirectIfAlreadyRegistered() {
+    async function checkIfAlreadyVerified() {
       if (!hydrated) {
         return;
       }
 
+      // Passive only — never prompt a connection just from loading this
+      // page. If no wallet is already authorized, this simply finds
+      // nothing and the manual flow below stays available.
+      const existing = getConnectedAddressIfAvailable();
+      if (!existing) {
+        return;
+      }
+
+      setWallet(existing);
+
       try {
-        const connected = await connectWallet();
-        if (!active) {
-          return;
-        }
-
-        setWallet(connected.address);
-
         const [artisanRecord, verified] = await Promise.all([
-          getArtisan(connected.address),
-          isVerifiedArtisan(connected.address)
+          getArtisan(existing),
+          isVerifiedArtisan(existing)
         ]);
 
         if (!active) {
@@ -87,20 +98,21 @@ export default function ArtisanPage() {
 
         const isRegistered = Number(artisanRecord?.registeredAt || 0) > 0;
         if (isRegistered && Boolean(verified)) {
-          setMessage("Wallet already registered and verified. Redirecting to product registration...");
-          router.replace("/register-product");
+          // Surface it, but never navigate on the user's behalf — only an
+          // explicit click on the button below moves to Register Product.
+          setAlreadyVerified(true);
         }
       } catch (_error) {
-        // Keep manual flow available when wallet is not connected yet.
+        // Non-blocking: keep manual flow available if the read fails.
       }
     }
 
-    void redirectIfAlreadyRegistered();
+    void checkIfAlreadyVerified();
 
     return () => {
       active = false;
     };
-  }, [hydrated, router]);
+  }, [hydrated]);
 
   function getAnonStatusMeta(status) {
     if (status === "logged-in") {
@@ -549,6 +561,19 @@ export default function ArtisanPage() {
           {wallet ? "Connected: " + wallet.slice(0, 8) + "..." : "Connect Wallet"}
         </Button>
       </div>
+
+      {alreadyVerified && (
+        <Card className="max-w-3xl border-[#1f4a38] bg-[#0f2e22]">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+            <p className="m-0 font-semibold text-[#4ade80]">
+              You&apos;re already a verified artisan on this wallet.
+            </p>
+            <Link href="/register-product" className="no-underline">
+              <Button type="button">Go to Register Product</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="max-w-3xl">
         <CardHeader>
