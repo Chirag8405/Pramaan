@@ -20,6 +20,7 @@ import {
   getProductNftOwner,
   markEscrowShipped,
   mintProductTwin,
+  previewRoyaltySettlement,
   transferProduct,
   verifyProduct
 } from "../../src/utils/contract";
@@ -84,6 +85,13 @@ export default function TransferPage() {
   const [escrowLookupId, setEscrowLookupId] = useState("");
   const [connectedWallet, setConnectedWallet] = useState("");
   const [buyerShareLink, setBuyerShareLink] = useState("");
+
+  const [escrowPreview, setEscrowPreview] = useState(null);
+  const [escrowPreviewError, setEscrowPreviewError] = useState("");
+  const [escrowPreviewLoading, setEscrowPreviewLoading] = useState(false);
+
+  const [completionPreview, setCompletionPreview] = useState(null);
+  const [completionPreviewError, setCompletionPreviewError] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -197,6 +205,44 @@ export default function TransferPage() {
     };
   }, [escrowTokenId]);
 
+  useEffect(() => {
+    const tokenValid = /^\d+$/.test(String(escrowTokenId)) && Number(escrowTokenId) > 0;
+    const amountValid = Number(escrowAmountEth) > 0;
+
+    if (escrowStep !== 1 || !tokenValid || !amountValid) {
+      setEscrowPreview(null);
+      setEscrowPreviewError("");
+      return;
+    }
+
+    let cancelled = false;
+    setEscrowPreviewLoading(true);
+    setEscrowPreviewError("");
+
+    const timer = setTimeout(async () => {
+      try {
+        const preview = await loadRoyaltyPreview(escrowTokenId, escrowAmountEth);
+        if (!cancelled) {
+          setEscrowPreview(preview);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setEscrowPreview(null);
+          setEscrowPreviewError(mapRoyaltyPreviewError(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setEscrowPreviewLoading(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [escrowTokenId, escrowAmountEth, escrowStep]);
+
   function truncateAddress(address) {
     if (!address) {
       return "-";
@@ -212,6 +258,10 @@ export default function TransferPage() {
     return handlers[handlers.length - 1];
   }
 
+  // Used only by the hidden Direct Transfer card below (ESCROW_ONLY_MODE = true).
+  // Not part of the active escrow flow, which now gets its royalty figures from
+  // the contract via previewRoyaltySettlement(). Candidate for removal together
+  // with the Direct Transfer card in a future cleanup pass.
   function calculateRoyaltyPercent(transferNumber) {
     const n = Math.max(1, Number(transferNumber || 1));
     return 40 / Math.sqrt(n);
@@ -470,6 +520,21 @@ export default function TransferPage() {
     }
   }
 
+  function mapRoyaltyPreviewError(error) {
+    const raw = String(error?.shortMessage || error?.message || "").toLowerCase();
+    if (raw.includes("unknown token")) {
+      return "This NFT token wasn't minted through the artisan royalty flow, so a royalty preview isn't available for it.";
+    }
+    return "Could not load royalty preview right now.";
+  }
+
+  async function loadRoyaltyPreview(tokenId, saleEth) {
+    const result = await previewRoyaltySettlement(Number(tokenId), saleEth);
+    const saleValue = Number(saleEth || 0);
+    const artisanPercent = saleValue > 0 ? (Number(result.artisanAmountEth) / saleValue) * 100 : 0;
+    return { ...result, saleEth: String(saleEth), artisanPercent };
+  }
+
   function getEscrowStatusLabel(status) {
     const labels = {
       0: "None",
@@ -577,6 +642,8 @@ export default function TransferPage() {
     }
 
     setEscrowLoading(true);
+    setCompletionPreview(null);
+    setCompletionPreviewError("");
     try {
       const details = await getEscrowDetails(id);
       setEscrowId(String(id));
@@ -949,11 +1016,24 @@ export default function TransferPage() {
         return;
       }
 
+      setCompletionPreview(null);
+      setCompletionPreviewError("");
+      let preSettlementPreview = null;
+      try {
+        preSettlementPreview = await loadRoyaltyPreview(details.tokenId, details.salePriceEth);
+      } catch (previewError) {
+        setCompletionPreviewError(mapRoyaltyPreviewError(previewError));
+      }
+
       setEscrowStatusText("Confirming delivery and releasing escrow funds...");
       await confirmEscrowReceived(Number(escrowId));
       await loadEscrow(escrowId);
       setEscrowStep(4);
       setEscrowStatusText("Escrow completed. Funds settled and NFT transferred.");
+      if (preSettlementPreview) {
+        setCompletionPreview(preSettlementPreview);
+        setCompletionPreviewError("");
+      }
       try {
         const liveOwner = await getProductNftOwner(Number(details.tokenId));
         setNftOwnerLive(liveOwner);
@@ -1077,6 +1157,35 @@ export default function TransferPage() {
               placeholder="Price (Sepolia ETH)"
             />
 
+            {escrowStep === 1 && (escrowPreviewLoading || escrowPreview || escrowPreviewError) && (
+              <Card className="border-[#9fd8c0] bg-[#e8f8f1]">
+                <CardHeader className="pb-2">
+                  <CardTitle>Royalty Preview</CardTitle>
+                  <CardDescription>What the artisan and seller will actually receive, from the contract.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2 text-[#355]">
+                  {escrowPreviewLoading && <p className="m-0">Loading royalty preview...</p>}
+                  {!escrowPreviewLoading && escrowPreviewError && (
+                    <p className="m-0 text-[#8a5b09]">{escrowPreviewError}</p>
+                  )}
+                  {!escrowPreviewLoading && escrowPreview && (
+                    <>
+                      <p className="m-0">This will be resale #{escrowPreview.transferId} for this piece.</p>
+                      <p className="m-0 text-base font-semibold text-[#1f6d50]">
+                        Artisan receives: {escrowPreview.artisanAmountEth} ETH ({escrowPreview.artisanPercent.toFixed(2)}%)
+                      </p>
+                      <p className="m-0">Seller receives: {escrowPreview.sellerAmountEth} ETH</p>
+                      {escrowPreview.penaltyBps > 0 && (
+                        <p className="m-0 text-sm text-[#8a5b09]">
+                          Reduced from the standard rate due to a compliance penalty on this artisan's record.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             <div className="rounded-xl border border-[#dce8e3] bg-[#f8fcfb] p-3 text-sm text-[#466]">
               <p className="m-0">Provenance owner (this hash): {truncateAddress(currentOwner || escrowSeller)}</p>
               <p className="m-0 mt-1">NFT owner (this token): {truncateAddress(nftOwnerLive)}</p>
@@ -1142,7 +1251,35 @@ export default function TransferPage() {
             )}
 
             {escrowStep >= 4 && (
-              <Badge variant="default" className="w-fit">Escrow Completed</Badge>
+              <>
+                <Badge variant="default" className="w-fit">Escrow Completed</Badge>
+                {(completionPreview || completionPreviewError) && (
+                  <Card className="border-[#9fd8c0] bg-[#e8f8f1]">
+                    <CardHeader className="pb-2">
+                      <CardTitle>Payout Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-2 text-[#355]">
+                      {completionPreviewError && !completionPreview && (
+                        <p className="m-0 text-[#8a5b09]">{completionPreviewError}</p>
+                      )}
+                      {completionPreview && (
+                        <>
+                          <p className="m-0">This was resale #{completionPreview.transferId} for this piece.</p>
+                          <p className="m-0 text-base font-semibold text-[#1f6d50]">
+                            Artisan received: {completionPreview.artisanAmountEth} ETH ({completionPreview.artisanPercent.toFixed(2)}%)
+                          </p>
+                          <p className="m-0">Seller received: {completionPreview.sellerAmountEth} ETH</p>
+                          {completionPreview.penaltyBps > 0 && (
+                            <p className="m-0 text-sm text-[#8a5b09]">
+                              Reduced from the standard rate due to a compliance penalty on this artisan's record.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </>
             )}
 
             {escrowStatusText && <p className="m-0 text-[#355]">{escrowStatusText}</p>}

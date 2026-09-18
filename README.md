@@ -222,6 +222,7 @@ npm run build
 - Admin actions (slashing, Aadhaar verifier assignment, escrow dispute arbitration) are all gated by a single `onlyOwner` address, not a multisig or DAO.
 - The AI verification route (`/api/verify-craft`) returns an error if no `OPENAI_API_KEY`/`GEMINI_API_KEY` is configured — there is no offline fallback scorer.
 - `EscrowMarketplace.checkExpiry`'s Shipped-deadline branch routes to `Disputed` for owner arbitration rather than resolving automatically (a deliberate design choice — see [Recent Fixes](#recent-fixes-and-engineering-history)).
+- The AI authenticity check (`/api/verify-craft`) verifies that an uploaded image visually depicts craft-in-progress (an artisan actively working, tools, workshop context) — it does not verify that the artisan captured the photo themselves. A plausible-looking photo of someone else's craft process (sourced from the web, stock photography, etc.) would pass identically to a genuine photo. No liveness/provenance-of-capture check (EXIF validation, reverse image search, live-capture-only enforcement, or a challenge-overlay requirement) is implemented.
 
 ## Recent Fixes and Engineering History
 
