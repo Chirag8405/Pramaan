@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-    color-scheme: light;
+    color-scheme: dark;
 }
 
 html {
@@ -9,7 +9,7 @@ html {
 }
 
 body {
-    background-color: #f5efe3;
-    color: #1f2937;
-    font-family: "Segoe UI", "Noto Sans", sans-serif;
+    background-color: #0b0f0e;
+    color: #f3f6f4;
+    font-family: var(--font-sans), "Segoe UI", "Noto Sans", sans-serif;
 }

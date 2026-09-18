@@ -10,8 +10,8 @@ function getScoreMeta(rawScore) {
     return {
       score,
       status: "Authentic",
-      color: "#16794d",
-      bg: "#d8f5e7"
+      color: "#4ade80",
+      bg: "#0f2e22"
     };
   }
 
@@ -19,16 +19,16 @@ function getScoreMeta(rawScore) {
     return {
       score,
       status: "Caution",
-      color: "#8b5a00",
-      bg: "#fff0cc"
+      color: "#fbbf24",
+      bg: "#332408"
     };
   }
 
   return {
     score,
     status: "Compromised",
-    color: "#8a1f1f",
-    bg: "#ffe0e0"
+    color: "#f87171",
+    bg: "#3a1414"
   };
 }
 
@@ -36,7 +36,7 @@ export default function TerritorScore({ score }) {
   const meta = getScoreMeta(score);
 
   return (
-    <Card className="border-[#d8e9e2]">
+    <Card>
       <CardContent className="grid gap-4 p-4">
         <div className="flex items-center gap-3">
           <div
@@ -56,7 +56,7 @@ export default function TerritorScore({ score }) {
             {meta.score}
           </div>
           <div className="grid gap-1">
-            <div className="text-sm text-[#49665e]">Terroir Score</div>
+            <div className="text-sm text-[#aebbb5]">Terroir Score</div>
             <div className="text-[1.2rem] font-bold" style={{ color: meta.color }}>{meta.status}</div>
             <Badge variant="neutral" className="w-fit">Live Integrity Signal</Badge>
           </div>
@@ -68,9 +68,9 @@ export default function TerritorScore({ score }) {
               width: "100%",
               height: 12,
               borderRadius: 999,
-              background: "#edf5f2",
+              background: "#1a211e",
               overflow: "hidden",
-              border: "1px solid #d8e8e2"
+              border: "1px solid #26312b"
             }}
           >
             <div

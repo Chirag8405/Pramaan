@@ -6,9 +6,10 @@ const badgeVariants = cva(
     {
         variants: {
             variant: {
-                default: "border-[#b9d3c8] bg-[#eaf6f1] text-[#1f5b4b]",
-                warm: "border-[#e4c2a8] bg-[#fff3e9] text-[#9a4c2f]",
-                neutral: "border-[#dce2e5] bg-[#f6f8f9] text-[#4a5a63]"
+                default: "border-[#1f4a38] bg-[#0f2e22] text-[#4ade80]",
+                warm: "border-[#4a3416] bg-[#332408] text-[#fbbf24]",
+                danger: "border-[#4a1f1f] bg-[#3a1414] text-[#f87171]",
+                neutral: "border-[#35443c] bg-[#1a211e] text-[#aebbb5]"
             }
         },
         defaultVariants: {
