@@ -631,6 +631,11 @@ export default function TransferPage() {
       return "Transaction rejected in wallet.";
     }
 
+    const looksLikeRawJsError = /cannot read propert|is not a function|is not defined|undefined is not|null is not|unexpected token|failed to fetch/i.test(lower);
+    if (looksLikeRawJsError) {
+      return fallbackMessage;
+    }
+
     return raw || fallbackMessage;
   }
 
@@ -681,8 +686,8 @@ export default function TransferPage() {
   async function onCreateEscrow(event) {
     event.preventDefault();
 
-    if (!escrowTokenId) {
-      setEscrowStatusText("Token ID is required.");
+    if (!escrowTokenId || !/^\d+$/.test(String(escrowTokenId)) || Number(escrowTokenId) <= 0) {
+      setEscrowStatusText("Enter a valid numeric Token ID.");
       return;
     }
 
@@ -692,8 +697,8 @@ export default function TransferPage() {
       return;
     }
 
-    if (!escrowAmountEth) {
-      setEscrowStatusText("Please enter escrow amount.");
+    if (!escrowAmountEth || !Number.isFinite(Number(escrowAmountEth)) || Number(escrowAmountEth) <= 0) {
+      setEscrowStatusText("Please enter an escrow amount greater than 0.");
       return;
     }
 
@@ -712,7 +717,15 @@ export default function TransferPage() {
       return;
     }
 
-    const connectedBuyer = (await getConnectedAddress()).toLowerCase();
+    let connectedBuyer;
+    try {
+      connectedBuyer = (await getConnectedAddress()).toLowerCase();
+    } catch (error) {
+      const raw = extractReadableError(error, "Connect your wallet to continue.");
+      setEscrowStatusText(mapEscrowError(raw, "Connect your wallet to continue."));
+      return;
+    }
+
     if (connectedBuyer === String(derivedSeller).toLowerCase()) {
       setEscrowStatusText(
         "Escrow requires two wallets. Switch to a buyer wallet different from seller " + truncateAddress(derivedSeller) + "."
