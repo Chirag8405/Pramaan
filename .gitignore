@@ -46,8 +46,6 @@ blockchain/ignition/deployments/
 blockchain/deployed.json
 # Ignore per-network deployed artifacts
 blockchain/deployed.*.json
-# Off-chain Aadhaar nullifier store (runtime state, not deploy config)
-blockchain/aadhaar-nullifiers.json
 
 # Ignore accidental nested frontend folder
 frontend/frontend/
