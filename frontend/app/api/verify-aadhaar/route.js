@@ -51,10 +51,29 @@ const MARK_VERIFIED_GAS_OVERRIDES = {
     gasLimit: 120000
 };
 
-// Forward-looking resilience for genuine transient RPC hiccups on the actual send/wait
-// calls — e.g. a dropped connection or a momentary provider timeout. Two retries with
-// increasing backoff; the LAST attempt's error is what the caller ultimately sees.
+// Preflight simulation (callStatic costs no gas) before ever sending a real transaction.
+// A mined-but-reverted transaction only ever surfaces as ethers' generic "transaction
+// failed" from tx.wait() -- it does not decode or attach the require() reason the way a
+// pre-send callStatic does. Without this preflight, a PERMANENT failure (wrong signer
+// permissions, insufficient funds, wrong contract state) would burn real Sepolia ETH on
+// three doomed send attempts below and still end up reported as an opaque "transaction
+// failed". A revert here means the real send would fail identically every time, so it's a
+// fast-fail, not something to retry. Mirrors the eth_call preflight
+// frontend/src/utils/contract.js's writeWithEstimatedGas already does for browser-wallet
+// writes -- this route just never had the equivalent for its own server-side send.
+//
+// Anything that isn't a decoded revert (network hiccup, timeout) is inconclusive on its
+// own, so it falls through to the real send, which has its own retry loop for genuine
+// transient RPC hiccups on the actual send/wait calls.
 async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoffsMs = [500, 1500]) {
+    try {
+        await artisanRegistry.callStatic.markAadhaarVerified(walletAddress);
+    } catch (error) {
+        if (error?.code === "CALL_EXCEPTION") {
+            throw error;
+        }
+    }
+
     let lastError;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
         try {
@@ -219,6 +238,10 @@ export async function POST(req) {
                 error?.shortMessage ||
                 error?.message ||
                 "Unknown error";
+            // The response body only reaches this route's own caller (the browser), not
+            // Vercel's function logs -- log server-side too so an on-chain failure is
+            // diagnosable via `vercel logs` without needing the client's response body.
+            console.error("[verify-aadhaar] on-chain call failed for", walletAddress, "-", detail);
             return NextResponse.json(
                 { error: "On-chain verification call failed.", detail },
                 { status: 502 }
