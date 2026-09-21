@@ -3,6 +3,19 @@ const path = require("path");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: path.resolve(__dirname),
+  // Both packages break when webpack bundles them into the /api/verify-aadhaar route
+  // handler instead of leaving them as native Node requires:
+  // - @anon-aadhaar/core (via snarkjs/web-worker) uses environment-dependent dynamic
+  //   requires webpack can't statically bundle ("Critical dependency: the request of a
+  //   dependency is an expression").
+  // - ethers resolves its own package.json "browser" field remap under webpack, which
+  //   swaps its real Node http/https transport for a fetch()-based one carrying
+  //   browser-only RequestInit fields (mode/credentials/referrer) that break POST
+  //   requests with a body under Node's fetch (observed as "missing response" /
+  //   SERVER_ERROR on every JSON-RPC call).
+  // Externalizing both makes Node's native require resolve them at runtime instead,
+  // matching how they already run when used directly outside of webpack.
+  serverExternalPackages: ["@anon-aadhaar/core", "ethers"],
   webpack: (config) => {
     config.resolve = config.resolve || {};
     config.resolve.alias = config.resolve.alias || {};
