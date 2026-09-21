@@ -107,6 +107,28 @@ async function diagnosePermanentSignerIssue() {
     return `Backend signer ${signer.address} ${problems.join(" and ")}.`;
 }
 
+// Same reasoning as diagnosePermanentSignerIssue, but for the per-request target: this
+// wallet must already be a registered artisan -- markAadhaarVerified requires
+// artisans[artisan].registeredAt != 0, and reverts with "ArtisanRegistry: artisan not
+// found" otherwise (a real, observed cause of failures here: a user can reach this route
+// before ever calling registerArtisan). Checking directly, rather than relying on the
+// callStatic preflight below to decode that revert, sidesteps an observed unreliability --
+// the exact same revert decoded cleanly (via ethers' `reason` field) in a local
+// reproduction against the same RPC endpoint and contract, but came back as an undecoded
+// "missing revert data in call exception" when this route's own Wallet-connected
+// callStatic hit it in production. Root cause not fully understood, but this direct read
+// is unaffected by it either way.
+async function diagnoseTargetArtisanIssue(walletAddress) {
+    const profile = await artisanRegistry.getArtisan(walletAddress);
+    if (ethers.BigNumber.from(profile.registeredAt).isZero()) {
+        return "This wallet is not registered as an artisan yet. Register as an artisan first, then verify Aadhaar.";
+    }
+    if (profile.isFraudulent) {
+        return "This artisan identity has been flagged and cannot be Aadhaar-verified.";
+    }
+    return null;
+}
+
 // Preflight simulation (callStatic costs no gas, and omits gas fields so it doesn't hit
 // the affordability-check ambiguity above) before ever sending a real transaction. A
 // mined-but-reverted transaction only ever surfaces as ethers' generic "transaction
@@ -123,9 +145,15 @@ async function diagnosePermanentSignerIssue() {
 // own, so it falls through to the real send, which has its own retry loop for genuine
 // transient RPC hiccups on the actual send/wait calls.
 async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoffsMs = [500, 1500]) {
-    const permanentIssue = await diagnosePermanentSignerIssue();
+    const [permanentIssue, targetIssue] = await Promise.all([
+        diagnosePermanentSignerIssue(),
+        diagnoseTargetArtisanIssue(walletAddress)
+    ]);
     if (permanentIssue) {
         throw new Error(permanentIssue);
+    }
+    if (targetIssue) {
+        throw new Error(targetIssue);
     }
 
     try {

@@ -60,6 +60,12 @@ export default function ArtisanPage() {
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(null);
   const [alreadyVerified, setAlreadyVerified] = useState(false);
+  // markAadhaarVerified requires the wallet to already be a registered artisan
+  // (registeredAt != 0) -- calling it before registerArtisan() always reverts with
+  // "ArtisanRegistry: artisan not found". Tracked separately from `success` (set only
+  // once this session's own registration submit succeeds) so a wallet that was already
+  // registered in an earlier session is also recognized via the initial on-load check.
+  const [isArtisanRegistered, setIsArtisanRegistered] = useState(false);
 
   const anonStatus = anonAadhaar?.status || "logged-out";
   const isAnonVerified = anonStatus === "logged-in";
@@ -97,6 +103,7 @@ export default function ArtisanPage() {
         }
 
         const isRegistered = Number(artisanRecord?.registeredAt || 0) > 0;
+        setIsArtisanRegistered(isRegistered);
         if (isRegistered && Boolean(verified)) {
           // Surface it, but never navigate on the user's behalf — only an
           // explicit click on the button below moves to Register Product.
@@ -206,6 +213,13 @@ export default function ArtisanPage() {
       setMessage("Complete Anon Aadhaar proof first.");
       return;
     }
+    if (!isArtisanRegistered) {
+      setMessage(
+        "Register as an artisan below first -- on-chain Aadhaar verification requires an " +
+        "existing registered artisan identity."
+      );
+      return;
+    }
 
     setSyncingAadhaar(true);
     setMessage("");
@@ -221,8 +235,8 @@ export default function ArtisanPage() {
         setAadhaarSyncedOnChain(true);
         setMessage(
           result.alreadyRecorded
-            ? "Aadhaar verification already confirmed for this wallet. Now click Register Artisan to mint identity."
-            : "Aadhaar verification synced on-chain for this wallet. Now click Register Artisan to mint identity."
+            ? "Aadhaar verification already confirmed for this wallet."
+            : "Aadhaar verification synced on-chain for this wallet."
         );
       } else if (result.outcome === "conflict") {
         setAadhaarSyncedOnChain(false);
@@ -248,6 +262,15 @@ export default function ArtisanPage() {
       setAutoSyncAttempted(false);
       setAadhaarSyncedOnChain(false);
       setAadhaarConflict(false);
+      return;
+    }
+
+    // Don't even attempt this until registration has actually happened -- see the
+    // isArtisanRegistered comment above. Not resetting autoSyncAttempted/state here (unlike
+    // the wallet/isAnonVerified branch above): registration finishing while this effect is
+    // otherwise idle should let it retry on the next render once isArtisanRegistered flips
+    // true, which the dependency array below already covers.
+    if (!isArtisanRegistered) {
       return;
     }
 
@@ -300,7 +323,7 @@ export default function ArtisanPage() {
     return () => {
       active = false;
     };
-  }, [wallet, isAnonVerified, aadhaarSyncedOnChain, autoSyncAttempted, syncingAadhaar]);
+  }, [wallet, isAnonVerified, isArtisanRegistered, aadhaarSyncedOnChain, autoSyncAttempted, syncingAadhaar]);
 
   async function onConnect() {
     try {
@@ -470,6 +493,7 @@ export default function ArtisanPage() {
       const txHash = receipt?.transactionHash || receipt?.hash || "";
       const txUrl = txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "";
 
+      setIsArtisanRegistered(true);
       setSuccess({
         tokenId,
         txUrl
@@ -484,6 +508,7 @@ export default function ArtisanPage() {
       if (raw.includes("craft score too low") || raw.includes("below 60")) {
         setMessage("Smart contract rejected: craft score below 60");
       } else if (raw.includes("already registered") || raw.includes("artisan already registered")) {
+        setIsArtisanRegistered(true);
         setMessage("This wallet already has an artisan identity. Registration was skipped.");
       } else {
         setMessage(error?.shortMessage || error?.message || "Registration failed.");
@@ -607,7 +632,7 @@ export default function ArtisanPage() {
               <Button
                 type="button"
                 onClick={onSyncAadhaarOnChain}
-                disabled={!isAnonVerified || syncingAadhaar || aadhaarConflict}
+                disabled={!isAnonVerified || !isArtisanRegistered || syncingAadhaar || aadhaarConflict}
                 className="w-fit"
               >
                 {syncingAadhaar
@@ -616,6 +641,13 @@ export default function ArtisanPage() {
                     ? "Aadhaar Verified On-Chain"
                     : "Verify Aadhaar Proof"}
               </Button>
+
+              {isAnonVerified && !isArtisanRegistered && !aadhaarSyncedOnChain && (
+                <div className="rounded-lg border border-[#3a3414] bg-[#2e2a0f] px-3 py-2 text-[#eab308]">
+                  Complete artisan registration below first — on-chain Aadhaar verification requires an
+                  existing registered artisan identity, and runs automatically right after registration.
+                </div>
+              )}
 
               {aadhaarSyncedOnChain && (
                 <div className="rounded-lg border border-[#1f4a38] bg-[#0f2e22] px-3 py-2 font-semibold text-[#4ade80]">
