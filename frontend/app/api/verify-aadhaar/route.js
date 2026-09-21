@@ -43,6 +43,60 @@ function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ethers reports a call that reverted with no decodable data (out-of-gas-style failure,
+// or -- as observed repeatedly on this exact route in production -- a genuine transient
+// hiccup somewhere between this serverless runtime and the RPC endpoint) using this exact
+// generic wording, regardless of the real cause. A real, deterministic require() revert
+// always comes back with the actual message text instead (confirmed repeatedly via local
+// reproduction against this same contract/RPC).
+function isUndecodedCallException(error) {
+    return (
+        error?.code === "CALL_EXCEPTION" &&
+        /missing revert data/i.test(String(error?.reason || error?.message || ""))
+    );
+}
+
+// Wraps a plain read-only call with a short retry-with-backoff. These reads have no
+// legitimate reason to fail -- any failure observed here so far has been this same
+// transient runtime hiccup, not a real on-chain condition (a real one just returns the
+// requested data). Retrying resolves that far more reliably than surfacing it to the user
+// as an opaque error for what the chain would have answered cleanly a moment later.
+async function withRpcRetry(fn, attempts = 3, backoffsMs = [300, 900]) {
+    let lastError;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            if (attempt < attempts - 1) {
+                await delay(backoffsMs[attempt] ?? backoffsMs[backoffsMs.length - 1]);
+            }
+        }
+    }
+    throw lastError;
+}
+
+// Like withRpcRetry, but only retries the specific undecoded-exception case -- a real,
+// decoded revert reason (e.g. a genuine "artisan flagged" from a race with the diagnostic
+// checks above) is deterministic and would just fail identically on retry, so it's
+// rethrown immediately instead of adding retry latency for no benefit.
+async function withUndecodedCallRetry(fn, attempts = 3, backoffsMs = [300, 900]) {
+    let lastError;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            const retryable = attempt < attempts - 1 && (error?.code !== "CALL_EXCEPTION" || isUndecodedCallException(error));
+            if (!retryable) {
+                throw error;
+            }
+            await delay(backoffsMs[attempt] ?? backoffsMs[backoffsMs.length - 1]);
+        }
+    }
+    throw lastError;
+}
+
 // Explicit EIP-1559 fee fields and gasLimit so ethers never has to call getFeeData()
 // (eth_getBlockByNumber) or estimateGas (eth_estimateGas) to fill them in itself. Those
 // calls were observed failing ("missing response" / SERVER_ERROR) specifically inside
@@ -76,8 +130,8 @@ const MARK_VERIFIED_GAS_OVERRIDES = {
 // normal decoded revert reason.
 async function diagnosePermanentSignerIssue() {
     const [isAuthorized, balance] = await Promise.all([
-        artisanRegistryDiagnostics.aadhaarVerifier(signer.address),
-        provider.getBalance(signer.address)
+        withRpcRetry(() => artisanRegistryDiagnostics.aadhaarVerifier(signer.address)),
+        withRpcRetry(() => provider.getBalance(signer.address))
     ]);
 
     const worstCaseCost = ethers.BigNumber.from(MARK_VERIFIED_GAS_OVERRIDES.gasLimit).mul(
@@ -119,7 +173,7 @@ async function diagnosePermanentSignerIssue() {
 // callStatic hit it in production. Root cause not fully understood, but this direct read
 // is unaffected by it either way.
 async function diagnoseTargetArtisanIssue(walletAddress) {
-    const profile = await artisanRegistry.getArtisan(walletAddress);
+    const profile = await withRpcRetry(() => artisanRegistry.getArtisan(walletAddress));
     if (ethers.BigNumber.from(profile.registeredAt).isZero()) {
         return "This wallet is not registered as an artisan yet. Register as an artisan first, then verify Aadhaar.";
     }
@@ -144,23 +198,33 @@ async function diagnoseTargetArtisanIssue(walletAddress) {
 // Anything that isn't a decoded revert (network hiccup, timeout) is inconclusive on its
 // own, so it falls through to the real send, which has its own retry loop for genuine
 // transient RPC hiccups on the actual send/wait calls.
+
+// Tags a thrown error with which stage produced it, purely for the server-side log line
+// below -- so any future failure is immediately attributable without another round trip
+// of speculation (as this exact route has needed more than once).
+function taggedError(error, stage) {
+    const tagged = error instanceof Error ? error : new Error(String(error));
+    tagged.stage = stage;
+    return tagged;
+}
+
 async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoffsMs = [500, 1500]) {
     const [permanentIssue, targetIssue] = await Promise.all([
         diagnosePermanentSignerIssue(),
         diagnoseTargetArtisanIssue(walletAddress)
     ]);
     if (permanentIssue) {
-        throw new Error(permanentIssue);
+        throw taggedError(new Error(permanentIssue), "signer-diagnostics");
     }
     if (targetIssue) {
-        throw new Error(targetIssue);
+        throw taggedError(new Error(targetIssue), "target-diagnostics");
     }
 
     try {
-        await artisanRegistry.callStatic.markAadhaarVerified(walletAddress);
+        await withUndecodedCallRetry(() => artisanRegistry.callStatic.markAadhaarVerified(walletAddress));
     } catch (error) {
         if (error?.code === "CALL_EXCEPTION") {
-            throw error;
+            throw taggedError(error, "callstatic-preflight");
         }
     }
 
@@ -176,7 +240,7 @@ async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoff
             }
         }
     }
-    throw lastError;
+    throw taggedError(lastError, "send");
 }
 
 // Anon Aadhaar's verify key is a small JSON file, not the multi-MB wasm/zkey (those are
@@ -343,6 +407,8 @@ export async function POST(req) {
             console.error(
                 "[verify-aadhaar] on-chain call failed for",
                 walletAddress,
+                "- stage:",
+                error?.stage || "unknown",
                 "- detail:",
                 detail,
                 "- code:",
