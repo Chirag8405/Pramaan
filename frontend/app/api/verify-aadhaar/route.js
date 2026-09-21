@@ -303,7 +303,29 @@ export async function POST(req) {
             // The response body only reaches this route's own caller (the browser), not
             // Vercel's function logs -- log server-side too so an on-chain failure is
             // diagnosable via `vercel logs` without needing the client's response body.
-            console.error("[verify-aadhaar] on-chain call failed for", walletAddress, "-", detail);
+            //
+            // error.transactionHash is only ever set when a real transaction was actually
+            // broadcast and mined (tx.wait() failure) -- it's absent for a callStatic/call
+            // failure (including diagnosePermanentSignerIssue's own reads, and the no-gas
+            // preflight simulation). That distinction is exactly what's needed to tell
+            // apart "the preflight/diagnostic checks passed but the real send still
+            // reverted on-chain for some other reason" from "one of those checks itself
+            // failed in an unexpected way" -- both of which can otherwise surface as this
+            // same undecoded ethers message.
+            console.error(
+                "[verify-aadhaar] on-chain call failed for",
+                walletAddress,
+                "- detail:",
+                detail,
+                "- code:",
+                error?.code,
+                "- signer:",
+                signer?.address,
+                "- had a real mined transaction:",
+                Boolean(error?.transactionHash),
+                "- transactionHash:",
+                error?.transactionHash
+            );
             return NextResponse.json(
                 { error: "On-chain verification call failed.", detail },
                 { status: 502 }
