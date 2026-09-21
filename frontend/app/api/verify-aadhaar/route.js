@@ -1,11 +1,10 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { artifactUrls, deserialize, init, verify } from "@anon-aadhaar/core";
 import { ARTISAN_ABI } from "../../../src/utils/abi";
 import { ARTISAN_REGISTRY_ADDRESS, CHAIN_ID, RPC_URL } from "../../../src/utils/constants";
 import { ANON_AADHAAR_USE_TEST_MODE } from "../../../src/utils/aadhaarConfig";
+import { claimNullifier, confirmNullifier, isNullifierStoreConfigured, releaseNullifierClaim } from "../../../src/utils/nullifierStore";
 
 export const runtime = "nodejs";
 
@@ -71,16 +70,6 @@ async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoff
     throw lastError;
 }
 
-// Off-chain nullifier store: a flat JSON file under blockchain/, matching this repo's
-// existing convention for deploy/demo state (deployed.json, demo-tx.sepolia.json).
-// At this project's scale (a handful of artisans in a demo/course context, single
-// server process) a plain JSON file with a simple in-process write lock is sufficient;
-// this is NOT tamper-proof or auditable the way on-chain state is (documented tradeoff
-// — see the design discussion this route came out of). Anyone with filesystem access to
-// the server, or anyone able to call markAadhaarVerified directly as a granted verifier
-// outside this route, bypasses this check entirely.
-const NULLIFIER_STORE_PATH = path.join(process.cwd(), "..", "blockchain", "aadhaar-nullifiers.json");
-
 // Anon Aadhaar's verify key is a small JSON file, not the multi-MB wasm/zkey (those are
 // prover-only, not needed for verification). It is not bundled in either @anon-aadhaar
 // package — verify() fetches it over the network from Anon Aadhaar's hosted S3 bucket on
@@ -104,34 +93,6 @@ async function ensureInitialized() {
     return initPromise;
 }
 
-async function readNullifierStore() {
-    try {
-        const raw = await fs.readFile(NULLIFIER_STORE_PATH, "utf8");
-        return JSON.parse(raw);
-    } catch (error) {
-        if (error?.code === "ENOENT") {
-            return {};
-        }
-        throw error;
-    }
-}
-
-async function writeNullifierStore(store) {
-    await fs.writeFile(NULLIFIER_STORE_PATH, JSON.stringify(store, null, 2) + "\n", "utf8");
-}
-
-// Serializes concurrent writes within this process so two near-simultaneous requests
-// can't both read the same "not yet used" state and race to write it back.
-let writeQueue = Promise.resolve();
-function withStoreLock(fn) {
-    const result = writeQueue.then(fn, fn);
-    writeQueue = result.then(
-        () => undefined,
-        () => undefined
-    );
-    return result;
-}
-
 function normalizeAddress(value) {
     try {
         return ethers.utils.getAddress(String(value || "").trim());
@@ -151,6 +112,10 @@ export async function POST(req) {
         }
         if (!walletAddress) {
             return NextResponse.json({ error: "Missing or invalid walletAddress." }, { status: 400 });
+        }
+
+        if (!isNullifierStoreConfigured()) {
+            return NextResponse.json({ error: "Aadhaar nullifier store is not configured." }, { status: 503 });
         }
 
         await ensureInitialized();
@@ -181,37 +146,12 @@ export async function POST(req) {
             return NextResponse.json({ error: "Verified proof did not contain a nullifier." }, { status: 400 });
         }
 
-        // Claim-then-verify-then-confirm-or-release: the read AND the "pending" write
-        // happen under the SAME lock acquisition, so two concurrent requests for the
-        // same nullifier cannot both observe "unused" and both proceed — only one can
-        // win the claim. Everything after this block (verify/tx/wait) runs unlocked;
-        // only the claim itself needs to be atomic.
-        const claimOutcome = await withStoreLock(async () => {
-            const store = await readNullifierStore();
-            const existingEntry = store[nullifier] || null;
-
-            if (existingEntry && existingEntry.walletAddress !== walletAddress) {
-                return { kind: "conflict" };
-            }
-
-            if (existingEntry && existingEntry.walletAddress === walletAddress && existingEntry.status === "confirmed") {
-                return { kind: "already-confirmed" };
-            }
-
-            if (existingEntry && existingEntry.walletAddress === walletAddress && existingEntry.status === "pending") {
-                return { kind: "in-progress" };
-            }
-
-            // No entry (or, defensively, an entry in an unrecognized status for this
-            // same wallet): claim it now, under this same lock acquisition.
-            store[nullifier] = {
-                walletAddress,
-                status: "pending",
-                timestamp: new Date().toISOString()
-            };
-            await writeNullifierStore(store);
-            return { kind: "claimed" };
-        });
+        // Claim-then-verify-then-confirm-or-release: the claim below is a single atomic
+        // Redis operation (SET ... NX), so two concurrent requests for the same nullifier
+        // — even landing on two different serverless instances — cannot both proceed.
+        // Everything after this point (on-chain call) runs unlocked; only the claim itself
+        // needs to be atomic.
+        const claimOutcome = await claimNullifier(nullifier, walletAddress);
 
         if (claimOutcome.kind === "conflict") {
             return NextResponse.json(
@@ -249,13 +189,7 @@ export async function POST(req) {
         // deleting the entry), so a failed attempt never leaves the nullifier stuck
         // in "pending" forever and blocks a legitimate retry.
         async function releaseClaim() {
-            await withStoreLock(async () => {
-                const store = await readNullifierStore();
-                if (store[nullifier]?.status === "pending" && store[nullifier]?.walletAddress === walletAddress) {
-                    delete store[nullifier];
-                    await writeNullifierStore(store);
-                }
-            });
+            await releaseNullifierClaim(nullifier, walletAddress);
         }
 
         if (!provider) {
@@ -291,19 +225,9 @@ export async function POST(req) {
             );
         }
 
-        // Transition the existing "pending" entry to "confirmed" (update, not
-        // create-from-scratch) only AFTER the on-chain call succeeds, so a failed
-        // transaction never leaves a confirmed nullifier behind.
-        await withStoreLock(async () => {
-            const store = await readNullifierStore();
-            store[nullifier] = {
-                walletAddress,
-                status: "confirmed",
-                verifiedAt: new Date().toISOString(),
-                txHash: receipt?.transactionHash || ""
-            };
-            await writeNullifierStore(store);
-        });
+        // Transition the existing "pending" entry to "confirmed" only AFTER the on-chain
+        // call succeeds, so a failed transaction never leaves a confirmed nullifier behind.
+        await confirmNullifier(nullifier, walletAddress, receipt?.transactionHash);
 
         return NextResponse.json(
             { verified: true, walletAddress, txHash: receipt?.transactionHash || "" },
