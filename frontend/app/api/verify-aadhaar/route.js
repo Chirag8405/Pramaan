@@ -4,10 +4,72 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import { artifactUrls, deserialize, init, verify } from "@anon-aadhaar/core";
 import { ARTISAN_ABI } from "../../../src/utils/abi";
-import { ARTISAN_REGISTRY_ADDRESS, RPC_URL } from "../../../src/utils/constants";
+import { ARTISAN_REGISTRY_ADDRESS, CHAIN_ID, RPC_URL } from "../../../src/utils/constants";
 import { ANON_AADHAAR_USE_TEST_MODE } from "../../../src/utils/aadhaarConfig";
 
 export const runtime = "nodejs";
+
+// Constructed once at module load, not per-request. Two reasons:
+// 1. A plain JsonRpcProvider pays a network-detection handshake (eth_chainId) on first
+//    use; under this route's bundled runtime that handshake was observed failing
+//    outright ("could not detect network" / NETWORK_ERROR / noNetwork) even though the
+//    RPC endpoint itself was reachable and healthy from a plain Node process at the same
+//    moment. StaticJsonRpcProvider skips that handshake entirely by taking the network
+//    (chainId) up front, since we already know it — this avoids the failure mode rather
+//    than retrying a call we don't need to make.
+// 2. Reusing one provider/signer/contract across requests means this setup cost (and any
+//    connection warm-up) is paid once per server lifetime instead of on every call.
+const provider = RPC_URL
+    ? new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: CHAIN_ID, name: "sepolia" })
+    : null;
+const backendSignerKey = process.env.AADHAAR_VERIFIER_SIGNER_PRIVATE_KEY;
+const signer = provider && backendSignerKey ? new ethers.Wallet(backendSignerKey, provider) : null;
+const artisanRegistry =
+    signer && ARTISAN_REGISTRY_ADDRESS ? new ethers.Contract(ARTISAN_REGISTRY_ADDRESS, ARTISAN_ABI, signer) : null;
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Explicit EIP-1559 fee fields and gasLimit so ethers never has to call getFeeData()
+// (eth_getBlockByNumber) or estimateGas (eth_estimateGas) to fill them in itself. Those
+// calls were observed failing ("missing response" / SERVER_ERROR) specifically inside
+// this route's runtime even though the RPC endpoint was otherwise healthy — supplying
+// these directly means markAadhaarVerified only ever needs the small, cheap RPC calls
+// (nonce fetch, send, receipt poll), not a full "latest" block fetch.
+//
+// No gas-parameter convention exists elsewhere in this codebase to match (frontend
+// contract.js and the blockchain/scripts/* write calls all rely on default estimation),
+// so these are fixed values calibrated once via a standalone script against live Sepolia
+// data, not fetched per-request:
+//   - measured baseFee ~0.96 gwei, ethers' own default maxFeePerGas ~3.4 gwei
+//   - measured estimateGas for this exact call: 50,353
+// maxFeePerGas is set well above the observed baseFee (headroom for spikes; this is
+// testnet ETH, overpaying costs nothing) and gasLimit is ~2.4x the measured estimate.
+const MARK_VERIFIED_GAS_OVERRIDES = {
+    maxFeePerGas: ethers.utils.parseUnits("50", "gwei"),
+    maxPriorityFeePerGas: ethers.utils.parseUnits("2", "gwei"),
+    gasLimit: 120000
+};
+
+// Forward-looking resilience for genuine transient RPC hiccups on the actual send/wait
+// calls — e.g. a dropped connection or a momentary provider timeout. Two retries with
+// increasing backoff; the LAST attempt's error is what the caller ultimately sees.
+async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoffsMs = [500, 1500]) {
+    let lastError;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+            const tx = await artisanRegistry.markAadhaarVerified(walletAddress, MARK_VERIFIED_GAS_OVERRIDES);
+            return await tx.wait();
+        } catch (error) {
+            lastError = error;
+            if (attempt < attempts - 1) {
+                await delay(backoffsMs[attempt] ?? backoffsMs[backoffsMs.length - 1]);
+            }
+        }
+    }
+    throw lastError;
+}
 
 // Off-chain nullifier store: a flat JSON file under blockchain/, matching this repo's
 // existing convention for deploy/demo state (deployed.json, demo-tx.sepolia.json).
@@ -196,7 +258,10 @@ export async function POST(req) {
             });
         }
 
-        const backendSignerKey = process.env.AADHAAR_VERIFIER_SIGNER_PRIVATE_KEY;
+        if (!provider) {
+            await releaseClaim();
+            return NextResponse.json({ error: "RPC endpoint is not configured." }, { status: 503 });
+        }
         if (!backendSignerKey) {
             await releaseClaim();
             return NextResponse.json(
@@ -209,14 +274,9 @@ export async function POST(req) {
             return NextResponse.json({ error: "ArtisanRegistry address is not configured." }, { status: 503 });
         }
 
-        const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-        const signer = new ethers.Wallet(backendSignerKey, provider);
-        const artisanRegistry = new ethers.Contract(ARTISAN_REGISTRY_ADDRESS, ARTISAN_ABI, signer);
-
         let receipt;
         try {
-            const tx = await artisanRegistry.markAadhaarVerified(walletAddress);
-            receipt = await tx.wait();
+            receipt = await markAadhaarVerifiedWithRetry(walletAddress);
         } catch (error) {
             await releaseClaim();
             const detail =
