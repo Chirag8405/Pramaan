@@ -26,6 +26,19 @@ const signer = provider && backendSignerKey ? new ethers.Wallet(backendSignerKey
 const artisanRegistry =
     signer && ARTISAN_REGISTRY_ADDRESS ? new ethers.Contract(ARTISAN_REGISTRY_ADDRESS, ARTISAN_ABI, signer) : null;
 
+// `aadhaarVerifier` is a public mapping on ArtisanRegistry, so Solidity auto-generates this
+// getter -- it's just not part of the app-wide ARTISAN_ABI (which only lists the functions
+// the rest of the frontend actually calls). Declared separately here rather than adding it
+// to the shared ABI, since nothing else needs it.
+const artisanRegistryDiagnostics =
+    signer && ARTISAN_REGISTRY_ADDRESS
+        ? new ethers.Contract(
+              ARTISAN_REGISTRY_ADDRESS,
+              ["function aadhaarVerifier(address) view returns (bool)"],
+              signer
+          )
+        : null;
+
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -51,21 +64,70 @@ const MARK_VERIFIED_GAS_OVERRIDES = {
     gasLimit: 120000
 };
 
-// Preflight simulation (callStatic costs no gas) before ever sending a real transaction.
-// A mined-but-reverted transaction only ever surfaces as ethers' generic "transaction
+// Two ways this call fails for reasons that have nothing to do with the specific request:
+// the signer was never granted verifier status, or it doesn't hold enough Sepolia ETH to
+// cover MARK_VERIFIED_GAS_OVERRIDES' worst case. Checking both directly (cheap reads, no
+// gas) up front gives a clear, actionable message instead of leaning on ethers to decode
+// an on-chain failure for these specific cases -- which is unreliable here: including
+// explicit gas fields in a call (required to route around the estimateGas/getFeeData RPC
+// fragility documented above) makes Alchemy run its own affordability check
+// ("insufficient funds for gas * price + value") before the EVM ever runs, and ethers
+// reports that as a bare, undecoded "missing revert data in call exception" rather than a
+// normal decoded revert reason.
+async function diagnosePermanentSignerIssue() {
+    const [isAuthorized, balance] = await Promise.all([
+        artisanRegistryDiagnostics.aadhaarVerifier(signer.address),
+        provider.getBalance(signer.address)
+    ]);
+
+    const worstCaseCost = ethers.BigNumber.from(MARK_VERIFIED_GAS_OVERRIDES.gasLimit).mul(
+        MARK_VERIFIED_GAS_OVERRIDES.maxFeePerGas
+    );
+
+    // Both checked and reported together (not one-then-the-other) so a completely fresh,
+    // never-set-up signer wallet gets one complete fix list instead of discovering the
+    // second problem only after fixing and redeploying for the first.
+    const problems = [];
+    if (!isAuthorized) {
+        problems.push(
+            `is not a granted Aadhaar verifier on ArtisanRegistry (run ` +
+            "scripts/grant-aadhaar-verifier.js for this address)"
+        );
+    }
+    if (balance.lt(worstCaseCost)) {
+        problems.push(
+            `has insufficient Sepolia ETH (has ${ethers.utils.formatEther(balance)} ETH, ` +
+            `needs at least ${ethers.utils.formatEther(worstCaseCost)} ETH for gas -- fund this address)`
+        );
+    }
+
+    if (problems.length === 0) {
+        return null;
+    }
+    return `Backend signer ${signer.address} ${problems.join(" and ")}.`;
+}
+
+// Preflight simulation (callStatic costs no gas, and omits gas fields so it doesn't hit
+// the affordability-check ambiguity above) before ever sending a real transaction. A
+// mined-but-reverted transaction only ever surfaces as ethers' generic "transaction
 // failed" from tx.wait() -- it does not decode or attach the require() reason the way a
-// pre-send callStatic does. Without this preflight, a PERMANENT failure (wrong signer
-// permissions, insufficient funds, wrong contract state) would burn real Sepolia ETH on
-// three doomed send attempts below and still end up reported as an opaque "transaction
-// failed". A revert here means the real send would fail identically every time, so it's a
-// fast-fail, not something to retry. Mirrors the eth_call preflight
-// frontend/src/utils/contract.js's writeWithEstimatedGas already does for browser-wallet
-// writes -- this route just never had the equivalent for its own server-side send.
+// pre-send callStatic does. Without this preflight, a PERMANENT failure (artisan not
+// registered, artisan flagged fraudulent) would burn real Sepolia ETH on three doomed send
+// attempts below and still end up reported as an opaque "transaction failed". A revert
+// here means the real send would fail identically every time, so it's a fast-fail, not
+// something to retry. Mirrors the eth_call preflight frontend/src/utils/contract.js's
+// writeWithEstimatedGas already does for browser-wallet writes -- this route just never
+// had the equivalent for its own server-side send.
 //
 // Anything that isn't a decoded revert (network hiccup, timeout) is inconclusive on its
 // own, so it falls through to the real send, which has its own retry loop for genuine
 // transient RPC hiccups on the actual send/wait calls.
 async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoffsMs = [500, 1500]) {
+    const permanentIssue = await diagnosePermanentSignerIssue();
+    if (permanentIssue) {
+        throw new Error(permanentIssue);
+    }
+
     try {
         await artisanRegistry.callStatic.markAadhaarVerified(walletAddress);
     } catch (error) {
