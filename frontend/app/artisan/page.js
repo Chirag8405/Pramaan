@@ -323,7 +323,7 @@ export default function ArtisanPage() {
     return () => {
       active = false;
     };
-  }, [wallet, isAnonVerified, isArtisanRegistered, aadhaarSyncedOnChain, autoSyncAttempted, syncingAadhaar]);
+  }, [wallet, isAnonVerified, isArtisanRegistered, aadhaarSyncedOnChain, autoSyncAttempted]);
 
   async function onConnect() {
     try {
