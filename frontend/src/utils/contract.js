@@ -885,9 +885,10 @@ export async function findLatestMintedTokenIdByRecipient(recipientAddress) {
     return highestTokenId;
 }
 
-// Same Alchemy NFT API + pagination pattern as findLatestMintedTokenIdByRecipient
-// above, but returning every owned token ID rather than just the highest one --
-// used to list everything a wallet currently holds, e.g. "My Products".
+// PHASE 4 · STEP 2 (implementation) — same Alchemy NFT API + pagination pattern as
+// findLatestMintedTokenIdByRecipient above, but returning every owned token ID
+// rather than just the highest one -- used to list everything a wallet currently
+// holds, e.g. "My Products".
 export async function getProductNftTokenIdsOwnedBy(ownerAddress) {
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
 
@@ -929,9 +930,10 @@ export async function getProductNftTokenIdsOwnedBy(ownerAddress) {
     return tokenIds.sort((a, b) => b - a);
 }
 
-// Reads ProductNFT's public `productMeta` mapping for one token -- the frozen,
-// at-mint-time AI terroir score plus the IPFS CID of the attestation metadata
-// that was hashed into ProductRegistry at registration time.
+// PHASE 4 · STEP 3 (implementation) — reads ProductNFT's public `productMeta`
+// mapping for one token -- the frozen, at-mint-time AI terroir score plus the IPFS
+// CID of the attestation metadata that was hashed into ProductRegistry at
+// registration time.
 export async function getProductMeta(tokenId) {
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
 

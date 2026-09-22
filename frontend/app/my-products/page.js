@@ -22,8 +22,13 @@ import { getIPFSUrl } from "../../src/utils/ipfs";
 // on-chain read (productMeta) -> IPFS fetch (recover productHash) -> on-chain read
 // (verifyProduct, for the live, custody-based trust score).
 async function resolveProduct(tokenId) {
+  // PHASE 4 · STEP 3 — on-chain read of ProductNFT's productMeta mapping: the
+  // frozen, at-mint-time AI score and the IPFS CID of the attestation metadata.
   const meta = await getProductMeta(tokenId);
 
+  // PHASE 4 · STEP 4 — fetch that metadata from IPFS and recover the embedded
+  // productHash. This is the ONLY bridge between ProductNFT's token IDs and
+  // ProductRegistry's product hashes -- there's no on-chain mapping between them.
   const metadataUrl = getIPFSUrl(meta.provenanceCid);
   const response = await fetch(metadataUrl, { cache: "no-store" });
   if (!response.ok) {
@@ -36,6 +41,9 @@ async function resolveProduct(tokenId) {
     throw new Error("Metadata for token " + tokenId + " has no productHash.");
   }
 
+  // PHASE 4 · STEP 5 — now that productHash is recovered, reuse Phase 3's core
+  // read for the live, custody-based trust score, shown alongside the frozen
+  // mint-time score above.
   let liveTerroir = null;
   try {
     const { terroir } = await verifyProduct(productHash);
@@ -96,6 +104,10 @@ export default function MyProductsPage() {
       setProducts([]);
 
       try {
+        // PHASE 4 · STEP 2 — one Alchemy NFT API call returns every ProductNFT
+        // token this wallet currently owns. Deliberately not an eth_getLogs scan
+        // (that hits this RPC's 10-block free-tier range limit -- see
+        // getProductNftTokenIdsOwnedBy's own comment in contract.js).
         const tokenIds = await getProductNftTokenIdsOwnedBy(address);
 
         if (!active) {
@@ -143,6 +155,7 @@ export default function MyProductsPage() {
     };
   }, [address]);
 
+  // PHASE 4 · STEP 1 — connect the wallet whose owned products we're about to look up.
   async function onConnect() {
     try {
       const result = await connectWallet();
@@ -188,6 +201,9 @@ export default function MyProductsPage() {
         </Card>
       )}
 
+      {/* PHASE 4 · STEP 6 — the payoff: both scores side by side (frozen mint-time
+          vs. live custody-based), plus quick links into Phase 3 (Verify) and
+          Phase 5 (Sell) for each resolved product. */}
       {products.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => (

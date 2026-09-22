@@ -31,6 +31,9 @@ contract ProductNFT is ERC721URIStorage {
     IArtisanRegistryForNFT public immutable artisanRegistry;
     IDynamicRoyaltyRegister public immutable royaltyEngine;
 
+    // PHASE 4 · STEP 3 (on-chain) — `public` auto-generates a free getter,
+    // productMeta(tokenId), which is exactly what getProductMeta() in the
+    // frontend's contract.js reads to power the My Products page.
     mapping(uint256 => ProductMeta) public productMeta;
 
     event ProductMinted(
