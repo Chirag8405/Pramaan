@@ -74,6 +74,9 @@ contract ArtisanRegistry is ERC721, Ownable {
         _;
     }
 
+    // PHASE 1 · STEP 7 — mints the soulbound identity NFT. Independent of Aadhaar
+    // verification: isAadhaarVerified always starts false here, regardless of whether
+    // steps 2-6 (the zk proof + backend sync) happened before or after this call.
     function registerArtisan(
         string calldata name,
         string calldata craft,
@@ -107,6 +110,10 @@ contract ArtisanRegistry is ERC721, Ownable {
 
     /// @notice Mock hook for off-chain Anon Aadhaar verification result.
     /// @dev In production, this is called by an attestation service after SDK proof validation.
+    // PHASE 1 · STEP 6 (on-chain) — called only by the dedicated backend signer, only
+    // after route.js has independently re-verified the zk proof and claimed the
+    // nullifier in Redis (steps 4-5). Requires STEP 7 (registerArtisan) to have
+    // already happened -- registeredAt != 0 -- otherwise this reverts.
     function markAadhaarVerified(address artisan) external {
         require(aadhaarVerifier[msg.sender] || msg.sender == owner(), "ArtisanRegistry: unauthorized verifier");
         ArtisanProfile storage profile = artisans[artisan];
@@ -227,6 +234,9 @@ contract ArtisanRegistry is ERC721, Ownable {
         }
     }
 
+    // PHASE 1 · STEP 8 — the combined gate. True only once BOTH registeredAt != 0
+    // (step 7) AND isAadhaarVerified (step 6) are set. Every other contract
+    // (ProductRegistry, ProductNFT) and the vouching functions below check this.
     function isVerifiedArtisan(address wallet) public view returns (bool) {
         ArtisanProfile memory profile = artisans[wallet];
         return (

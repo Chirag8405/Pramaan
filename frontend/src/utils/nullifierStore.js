@@ -1,5 +1,9 @@
 import { Redis } from "@upstash/redis";
 
+// PHASE 1 · STEP 5 (implementation) — this is the Redis-backed anti-replay ledger
+// claimNullifier()/confirmNullifier()/releaseNullifierClaim() in
+// app/api/verify-aadhaar/route.js call into.
+//
 // Anti-replay ledger for Anon Aadhaar nullifiers: ties one Aadhaar identity to one wallet
 // forever (app/api/verify-aadhaar/route.js is the only caller). This previously lived as a
 // flat JSON file at blockchain/aadhaar-nullifiers.json with an in-process write lock, which

@@ -93,6 +93,11 @@ export default function ArtisanPage() {
       setWallet(existing);
 
       try {
+        // PHASE 1 · STEP 8 — isVerifiedArtisan() is the combined gate: true only once
+        // BOTH registration (step 7) and Aadhaar verification (steps 2-6) have
+        // completed. Checked here just to surface "already verified" on page load;
+        // every other page/contract that requires artisan status checks this same
+        // function independently.
         const [artisanRecord, verified] = await Promise.all([
           getArtisan(existing),
           isVerifiedArtisan(existing)
@@ -163,6 +168,10 @@ export default function ArtisanPage() {
   // itself using a dedicated backend signer (the artisan's own wallet no longer calls
   // it directly). Returns one of three outcomes so callers can branch on them distinctly
   // rather than collapsing everything into a single generic error path.
+  // PHASE 1 · STEP 3 — sends the local zk proof to our own backend. Everything from
+  // here on (deserialize/verify, nullifier claim, the actual on-chain call) happens
+  // server-side in app/api/verify-aadhaar/route.js -- this function just posts and
+  // interprets the response.
   async function submitAadhaarProofForVerification(walletAddress) {
     const serializedProof = getSerializedAadhaarProof();
     if (!serializedProof) {
@@ -208,6 +217,10 @@ export default function ArtisanPage() {
     };
   }
 
+  // PHASE 1 · STEP 6 (trigger) — manual "Verify Aadhaar Proof" button. The actual
+  // markAadhaarVerified() on-chain call happens server-side, using the dedicated
+  // signer wallet, only after the backend independently re-verifies the proof and
+  // claims the nullifier. This function just fires that request and reads the result.
   async function onSyncAadhaarOnChain() {
     if (!isAnonVerified) {
       setMessage("Complete Anon Aadhaar proof first.");
@@ -280,6 +293,9 @@ export default function ArtisanPage() {
 
     let active = true;
 
+    // PHASE 1 · STEP 6 (auto trigger) — same on-chain sync as the manual button
+    // above, fired automatically the moment both isAnonVerified and
+    // isArtisanRegistered are true, so a fresh user doesn't have to click twice.
     async function autoSync() {
       setAutoSyncAttempted(true);
       setSyncingAadhaar(true);
@@ -325,6 +341,7 @@ export default function ArtisanPage() {
     };
   }, [wallet, isAnonVerified, isArtisanRegistered, aadhaarSyncedOnChain, autoSyncAttempted]);
 
+  // PHASE 1 · STEP 1 — connect the wallet everything else in this flow acts on.
   async function onConnect() {
     try {
       const result = await connectWallet();
@@ -482,6 +499,9 @@ export default function ArtisanPage() {
 
       setStepProgress("Step 3/3: Confirming on Sepolia...");
 
+      // PHASE 1 · STEP 7 — mints the soulbound identity NFT on-chain (independent of
+      // steps 2-6; the contract itself doesn't require Aadhaar to be verified first).
+      // isAadhaarVerified stays false on this new profile until STEP 6 completes.
       const receipt = await registerArtisan(
         form.name.trim(),
         form.craft.trim(),
@@ -624,6 +644,9 @@ export default function ArtisanPage() {
                 <p className="m-0 text-xs text-[#8a9891]">
                   Opens Anon Aadhaar&apos;s own verification window (third-party, keeps its own light styling).
                 </p>
+                {/* PHASE 1 · STEP 2 — clicking this generates a zk-SNARK proof entirely
+                    client-side (the QR contents never leave the browser). Nothing on-chain
+                    or server-side happens yet; anonStatus just flips to "logged-in". */}
                 <div className="w-fit rounded-lg bg-white p-1">
                   <LogInWithAnonAadhaar nullifierSeed={aadhaarNullifierSeed} fieldsToReveal={[]} />
                 </div>

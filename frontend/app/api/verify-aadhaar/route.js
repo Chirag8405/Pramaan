@@ -332,6 +332,9 @@ export async function POST(req) {
             return NextResponse.json({ error: "Aadhaar nullifier store is not configured." }, { status: 503 });
         }
 
+        // PHASE 1 · STEP 4 — independently re-verify the zk proof server-side. The
+        // browser's claim that the proof is valid is never trusted; this actually
+        // re-runs the zk-SNARK verification against the known verification key.
         await ensureInitialized();
 
         let pcd;
@@ -360,11 +363,12 @@ export async function POST(req) {
             return NextResponse.json({ error: "Verified proof did not contain a nullifier." }, { status: 400 });
         }
 
-        // Claim-then-verify-then-confirm-or-release: the claim below is a single atomic
-        // Redis operation (SET ... NX), so two concurrent requests for the same nullifier
-        // — even landing on two different serverless instances — cannot both proceed.
-        // Everything after this point (on-chain call) runs unlocked; only the claim itself
-        // needs to be atomic.
+        // PHASE 1 · STEP 5 — anti-replay: claim this nullifier in Redis so the same real
+        // Aadhaar identity can never verify two different wallets. Claim-then-verify-
+        // then-confirm-or-release: the claim below is a single atomic Redis operation
+        // (SET ... NX), so two concurrent requests for the same nullifier — even landing
+        // on two different serverless instances — cannot both proceed. Everything after
+        // this point (on-chain call) runs unlocked; only the claim itself needs to be atomic.
         const claimOutcome = await claimNullifier(nullifier, walletAddress);
 
         if (claimOutcome.kind === "conflict") {
@@ -422,6 +426,9 @@ export async function POST(req) {
             return NextResponse.json({ error: "ArtisanRegistry address is not configured." }, { status: 503 });
         }
 
+        // PHASE 1 · STEP 6 — the dedicated backend signer (never the artisan's own
+        // wallet) calls markAadhaarVerified() on-chain. See markAadhaarVerifiedWithRetry
+        // above for the diagnostics/preflight/retry logic wrapped around this call.
         let receipt;
         try {
             receipt = await markAadhaarVerifiedWithRetry(walletAddress);
