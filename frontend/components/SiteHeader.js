@@ -13,7 +13,8 @@ const navGroups = [
         label: "Makers",
         items: [
             { href: "/artisan", label: "Artisan" },
-            { href: "/register-product", label: "Register Product" }
+            { href: "/register-product", label: "Register Product" },
+            { href: "/my-products", label: "My Products" }
         ]
     },
     {

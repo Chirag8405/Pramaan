@@ -114,6 +114,18 @@ export const PRODUCT_NFT_ABI = [
     ],
     name: "ProductMinted",
     type: "event"
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "productMeta",
+    outputs: [
+      { internalType: "uint8", name: "terroirScore", type: "uint8" },
+      { internalType: "string", name: "provenanceCid", type: "string" },
+      { internalType: "uint256", name: "mintedAt", type: "uint256" },
+      { internalType: "address", name: "artisan", type: "address" }
+    ],
+    stateMutability: "view",
+    type: "function"
   }
 ];
 
