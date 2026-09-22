@@ -14,7 +14,7 @@ Pramaan is a Sepolia-based provenance and trust platform for GI/craft products. 
 
 ## 1) Smart Contracts
 
-Five contracts, all deployed together via `blockchain/scripts/deploy.js` with cross-contract wiring (ProductNFT registered as DynamicRoyalty's minter-registrar; EscrowMarketplace registered as its marketplace). All five are covered by a 153-test Hardhat suite — see [Recent Fixes](#recent-fixes-and-engineering-history) below.
+Five contracts, all deployed together via `blockchain/scripts/deploy.js` with cross-contract wiring (ProductNFT registered as DynamicRoyalty's minter-registrar; EscrowMarketplace registered as its marketplace). All five are covered by a 157-test Hardhat suite — see [Recent Fixes](#recent-fixes-and-engineering-history) below.
 
 ### ArtisanRegistry (`blockchain/contracts/ArtisanRegistry.sol`)
 
@@ -184,7 +184,9 @@ cd frontend
 npm install
 ```
 
-Create/update `frontend/.env.local` (running `npm run deploy:sepolia:sync` from `blockchain/` writes the five contract-address keys and chain id automatically):
+Create/update `frontend/.env.local` from `frontend/.env.example` (running `npm run deploy:sepolia:sync` from `blockchain/` writes the five contract-address keys and chain id automatically):
+
+Contract addresses and chain:
 - `NEXT_PUBLIC_ARTISAN_REGISTRY_ADDRESS`
 - `NEXT_PUBLIC_PRODUCT_REGISTRY_ADDRESS`
 - `NEXT_PUBLIC_PRODUCT_NFT_ADDRESS`
@@ -193,9 +195,27 @@ Create/update `frontend/.env.local` (running `npm run deploy:sepolia:sync` from 
 - `NEXT_PUBLIC_CHAIN_ID`
 - `NEXT_PUBLIC_RPC_URL`
 - `NEXT_PUBLIC_WS_RPC_URL`
-- `NEXT_PUBLIC_PINATA_JWT` / `PINATA_JWT` (IPFS pinning)
-- `OPENAI_API_KEY` or `GEMINI_API_KEY` (AI terroir-scoring route)
-- `NEXT_PUBLIC_VERCEL_URL` (optional)
+
+App URL / optional extras:
+- `NEXT_PUBLIC_VERCEL_URL` (optional; public deployment URL shown in footer / used to build shareable links)
+- `NEXT_PUBLIC_APP_URL` (optional; takes priority over `NEXT_PUBLIC_VERCEL_URL` for shareable transfer links if set)
+- `NEXT_PUBLIC_CRAFT_MODEL_INFERENCE_URL` (optional model inference endpoint for craft scoring)
+- `NEXT_PUBLIC_DEMO_PRODUCT_HASH` (optional; prefills an example product hash on `/verify`)
+
+IPFS (Pinata):
+- `NEXT_PUBLIC_PINATA_JWT` / `PINATA_JWT` — set both to the same token (client-side vs. server-side upload route)
+- `NEXT_PUBLIC_PINATA_GATEWAY`
+
+AI terroir-scoring route (`/api/verify-craft`) — no offline fallback if the selected provider's key is missing:
+- `VISION_PROVIDER` (`openai` or `gemini`)
+- `OPENAI_API_KEY`, `OPENAI_VISION_MODEL`
+- `GEMINI_API_KEY`, `GEMINI_VISION_MODEL`
+
+Anon Aadhaar identity verification (`/api/verify-aadhaar`):
+- `NEXT_PUBLIC_ANON_AADHAAR_USE_TEST_MODE` / `ANON_AADHAAR_USE_TEST_MODE` — client widget vs. backend verifier; **must be set to the same value** (or both left unset), or the frontend proof widget and backend verifier check against different pubkey hashes (test vs. production UIDAI key); both default to `true` (test mode) if unset
+- `NEXT_PUBLIC_AADHAAR_NULLIFIER_SEED` (any positive integer, must stay constant to keep nullifiers stable)
+- `AADHAAR_VERIFIER_SIGNER_PRIVATE_KEY` — a **dedicated** wallet that calls `markAadhaarVerified` on behalf of verified proofs; distinct from `blockchain/.env`'s deployer `PRIVATE_KEY`, and only needs the `setAadhaarVerifier`-granted verifier role, never owner/deployer power; server-side only, never `NEXT_PUBLIC_`
+- `KV_REST_API_URL` / `KV_REST_API_TOKEN` (Vercel KV) or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (Upstash for Redis) — anti-replay nullifier ledger; without one of these pairs, the route fails closed with a `503`
 
 Run locally:
 
@@ -232,7 +252,7 @@ npm run build
 
 This section documents real fixes found and applied while building out test coverage — kept here as evidence of the engineering process, not as an incident report.
 
-- **Hardhat test suite added (0 → 153 tests).** All five contracts now have dedicated test files (`blockchain/test/*.test.js`) covering happy paths, access control, and edge cases — including an ECDSA attestation digest helper mirrored byte-for-byte from `ProductRegistry`'s signing logic, and a BigInt integer-sqrt oracle mirrored from `DynamicRoyalty`'s Solidity implementation.
+- **Hardhat test suite added (0 → 157 tests).** All five contracts now have dedicated test files (`blockchain/test/*.test.js`) covering happy paths, access control, and edge cases — including an ECDSA attestation digest helper mirrored byte-for-byte from `ProductRegistry`'s signing logic, and a BigInt integer-sqrt oracle mirrored from `DynamicRoyalty`'s Solidity implementation.
 - **DynamicRoyalty taper-seam bug found via testing, then fixed.** The precomputed royalty table originally covered only the first 10 resales; resales 11+ fell back to a `4000/sqrt(transferId)` formula that, at the seam, paid a *higher* royalty (1333 bps) than resale 10 (1200 bps) — an increase, contradicting the contract's own "decaying royalty" design. The table was extended from 10 to 15 entries so it fully covers the flat plateau of the formula in that range and hands off smoothly at resale 16. Verified monotonically non-increasing across the full curve by test.
 - **EscrowMarketplace `checkExpiry` added.** Two states could previously freeze indefinitely if a party forgot to act: `Created` past its shipping deadline (buyer had to remember to call `cancelExpired`) and `Shipped` past its confirmation deadline (no recovery path existed at all). `checkExpiry` is a new, permissionless function callable by anyone once a deadline passes — it refunds the buyer for an expired `Created` escrow (reusing the existing refund path), and routes an expired `Shipped` escrow into `Disputed` for owner arbitration rather than resolving the outcome unilaterally.
 - **Private-key-exposure vulnerability found and fixed.** `frontend/app/api/demo-qr/route.js` had a fallback chain that, if no demo secret env var was set, read `blockchain/.env` directly off disk and returned its `PRIVATE_KEY` value — the real Sepolia deployer key — in a public API response. The route no longer reads any `.env` file off disk; if no demo secret is configured it now fails closed with a `500`. The previously-exposed deployer key was rotated and all five contracts were redeployed under the new key. (This route, and the retailer-side demo QR generator it backed, were later removed entirely as part of the post-hackathon real-user redesign — see below.)
@@ -241,6 +261,8 @@ This section documents real fixes found and applied while building out test cove
 - **`/transfer` Create Escrow raw-error leak fixed.** A reported crash ("Cannot read properties of undefined (reading 'toString')" shown as literal text in the UI) traced back to the escrow flow's error-message pipeline having no catch-all: any unrecognized JS runtime error fell through to being displayed verbatim instead of a friendly message. Added a raw-JS-error pattern check that substitutes a friendly fallback, tightened the token-ID/amount precondition checks from truthiness to actual validity, and wrapped a previously-unguarded wallet-address lookup in a try/catch.
 - **Concurrent wallet-connect race fixed.** Multiple components independently calling the wallet-connect flow at once could trigger MetaMask's "already processing eth_requestAccounts" error, which surfaced as raw error text. Fixed with an in-flight-request singleton so concurrent callers share one pending connection instead of each firing their own.
 - **Aadhaar nullifier store moved off local disk.** `/api/verify-aadhaar`'s anti-replay ledger (ties one Aadhaar identity to one wallet forever) was a flat JSON file at `blockchain/aadhaar-nullifiers.json` — a path outside the deployed Vercel project root (`frontend/`), on a filesystem that's ephemeral and largely read-only for serverless functions. In production this either failed to write or silently lost the anti-replay guarantee across cold starts. Replaced with a Redis-backed store (`frontend/src/utils/nullifierStore.js`, Vercel KV or Upstash Redis) using an atomic `SET ... NX` claim, so the guarantee now holds across serverless instances instead of just within one warm process. The route fails closed with a `503` if no KV/Upstash env vars are configured, rather than silently accepting unverifiable requests.
+- **`@anon-aadhaar/core` and `ethers` externalized from server bundling.** Webpack bundling `/api/verify-aadhaar`'s route handler broke both dependencies: `@anon-aadhaar/core` (via snarkjs/web-worker) has environment-dependent dynamic requires webpack can't statically bundle, hanging proof verification indefinitely; `ethers` picks up its "browser" package.json remap under webpack, swapping its Node http/https transport for a `fetch()`-based one whose browser-only `RequestInit` fields break POST requests with a body under Node's fetch, surfacing as `SERVER_ERROR`/"missing response" on every JSON-RPC call. Marked both as `serverExternalPackages` in `frontend/next.config.js` so Node's native `require` resolves them at runtime instead.
+- **`markAadhaarVerified` hardened against RPC fragility, then debugged through a multi-round "missing revert data" investigation.** After the bundling fix, the on-chain call was hardened (static JSON-RPC provider with explicit chain id, provider/signer/contract built once at module load, explicit gas fields, retry-with-backoff on send) and given a `callStatic` preflight to decode real revert reasons instead of surfacing ethers' generic failure — both to give actionable errors and to stop burning Sepolia ETH retrying permanently-failing sends. The decoded-revert path then chased an opaque, undecoded "missing revert data in call exception" through several distinct root causes: a Wallet-connected `callStatic`'s own affordability preflight masking the real reason when the signer lacked funds; the true root cause turning out to be an ordering bug where `/artisan` (and the route's own fallback) could call `markAadhaarVerified` before `registerArtisan` had ever run, which `ArtisanRegistry` rejects; and, after that fix, transient RPC read failures against this specific serverless runtime that a local reproduction never hit. Fixes landed in order: signer-authorization/balance diagnostics reported alongside any failure, transaction-hash/error-code logging to distinguish a preflight failure from a mined-then-reverted send, gating `/artisan`'s manual and auto-sync Aadhaar calls behind `isArtisanRegistered` (plus a defense-in-depth `diagnoseTargetArtisanIssue` check in the route itself), retry-with-backoff on every plain diagnostic read, and finally replacing the route's Wallet-connected reads with a single Provider-connected `artisanRegistryReader` (with an explicit `from` override for the callStatic preflight) — matching how every successful local reproduction had run the calls, and leaving only the real send on the Wallet-connected contract.
 
 ## Notes
 
