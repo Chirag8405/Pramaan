@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Badge } from "../../components/ui/badge";
@@ -21,6 +22,7 @@ import {
 } from "../../src/utils/contract";
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
+import { getShareBaseUrl } from "../../src/utils/url";
 
 function sanitizeHexBytes(value) {
   const text = String(value || "").trim();
@@ -399,6 +401,10 @@ export default function RegisterProductPage() {
         "/transfer?hash=" +
         productHash +
         (mintedTokenId ? "&tokenId=" + encodeURIComponent(mintedTokenId) : "");
+      // Absolute, not relative -- this is what actually gets encoded into the QR code.
+      // A phone scanning the code is a different device than the one that registered
+      // the product, so "/verify?hash=..." alone would have nothing to resolve against.
+      const verifyUrlAbsolute = getShareBaseUrl() + verifyUrl;
 
       setSuccess({
         productHash,
@@ -414,6 +420,7 @@ export default function RegisterProductPage() {
         txUrl: txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "",
         mintTxUrl: mintTxHash ? "https://sepolia.etherscan.io/tx/" + mintTxHash : "",
         verifyUrl,
+        verifyUrlAbsolute,
         transferUrl
       });
 
@@ -714,6 +721,18 @@ export default function RegisterProductPage() {
               <Link href={success.transferUrl} className="no-underline">
                 <Button variant="secondary">Open Transfer Page</Button>
               </Link>
+            </div>
+
+            <div className="grid gap-2 rounded-xl border border-[#26312b] bg-[#131917] p-3" style={{ width: "fit-content" }}>
+              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">
+                Scan to Verify (Retailer QR)
+              </p>
+              <div className="rounded-lg bg-white p-3" style={{ width: "fit-content" }}>
+                <QRCodeSVG value={success.verifyUrlAbsolute} size={180} />
+              </div>
+              <p className="m-0 max-w-[220px] break-all font-mono text-[10px] text-[#8a9891]">
+                {success.verifyUrlAbsolute}
+              </p>
             </div>
 
             <div style={{ maxWidth: 340 }}>

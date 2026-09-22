@@ -27,6 +27,7 @@ import {
 import { RPC_URL } from "../../src/utils/constants";
 import { appendEvidenceEntry } from "../../src/utils/evidence";
 import { getIPFSUrl } from "../../src/utils/ipfs";
+import { getShareBaseUrl } from "../../src/utils/url";
 
 const publicClient = createPublicClient({
   chain: sepolia,
@@ -35,26 +36,6 @@ const publicClient = createPublicClient({
 
 const DEMO_BUYER_ADDRESS = "0x71C0000000000000000000000000000000000000";
 const ESCROW_ONLY_MODE = true;
-
-function getShareBaseUrl() {
-  const configured =
-    String(process.env.NEXT_PUBLIC_APP_URL || "").trim() ||
-    String(process.env.NEXT_PUBLIC_VERCEL_URL || "").trim();
-
-  if (configured) {
-    const normalized = configured.replace(/\/$/, "");
-    if (/^https?:\/\//i.test(normalized)) {
-      return normalized;
-    }
-    return "https://" + normalized;
-  }
-
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
-
-  return "";
-}
 
 export default function TransferPage() {
   const [hash, setHash] = useState("");

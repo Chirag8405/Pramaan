@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, http } from "viem";
 import { sepolia } from "viem/chains";
@@ -14,6 +15,7 @@ import { makeScanNonce } from "../../src/utils/hash";
 import { getIPFSUrl } from "../../src/utils/ipfs";
 import { PRODUCT_REGISTRY_ADDRESS, RPC_URL } from "../../src/utils/constants";
 import { appendEvidenceEntry } from "../../src/utils/evidence";
+import { getShareBaseUrl } from "../../src/utils/url";
 
 const PRODUCT_REGISTERED_EVENT = {
   type: "event",
@@ -454,6 +456,15 @@ export default function VerifyPage() {
 
           <div className="max-w-4xl">
             <TerritorScore score={resultData.terroir} />
+          </div>
+
+          <div className="grid max-w-4xl gap-2 rounded-xl border border-[#26312b] bg-[#131917] p-3" style={{ width: "fit-content" }}>
+            <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">
+              Share / Re-scan This Verification
+            </p>
+            <div className="rounded-lg bg-white p-3" style={{ width: "fit-content" }}>
+              <QRCodeSVG value={getShareBaseUrl() + "/verify?hash=" + resultData.hash} size={160} />
+            </div>
           </div>
 
           {resultType === RESULT.CAUTION && (
