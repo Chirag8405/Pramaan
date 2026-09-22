@@ -882,6 +882,66 @@ export async function findLatestMintedTokenIdByRecipient(recipientAddress) {
     return highestTokenId;
 }
 
+// Same Alchemy NFT API + pagination pattern as findLatestMintedTokenIdByRecipient
+// above, but returning every owned token ID rather than just the highest one --
+// used to list everything a wallet currently holds, e.g. "My Products".
+export async function getProductNftTokenIdsOwnedBy(ownerAddress) {
+    assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
+
+    const owner = getAddress(normalizeAddress(ownerAddress, "owner address"));
+    const nftApiBase = deriveAlchemyNftApiBase(RPC_URL);
+
+    if (!nftApiBase) {
+        throw new Error("Automatic NFT lookup isn't available for the configured RPC provider.");
+    }
+
+    let pageKey = "";
+    const tokenIds = [];
+
+    do {
+        const params = new URLSearchParams({ owner, withMetadata: "false" });
+        params.append("contractAddresses[]", PRODUCT_NFT_ADDRESS);
+        if (pageKey) {
+            params.set("pageKey", pageKey);
+        }
+
+        const response = await fetch(nftApiBase + "/getNFTsForOwner?" + params.toString());
+        if (!response.ok) {
+            throw new Error("NFT lookup request failed (HTTP " + response.status + ").");
+        }
+
+        const payload = await response.json();
+        const owned = Array.isArray(payload?.ownedNfts) ? payload.ownedNfts : [];
+
+        for (const nft of owned) {
+            const tokenId = Number(nft?.tokenId || 0);
+            if (tokenId > 0) {
+                tokenIds.push(tokenId);
+            }
+        }
+
+        pageKey = payload?.pageKey || "";
+    } while (pageKey);
+
+    return tokenIds.sort((a, b) => b - a);
+}
+
+// Reads ProductNFT's public `productMeta` mapping for one token -- the frozen,
+// at-mint-time AI terroir score plus the IPFS CID of the attestation metadata
+// that was hashed into ProductRegistry at registration time.
+export async function getProductMeta(tokenId) {
+    assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
+
+    const [terroirScore, provenanceCid, mintedAt, artisan] = await readContract(config, {
+        address: PRODUCT_NFT_ADDRESS,
+        abi: PRODUCT_NFT_ABI,
+        functionName: "productMeta",
+        args: [BigInt(tokenId)]
+    });
+
+    return { terroirScore: Number(terroirScore), provenanceCid, mintedAt: Number(mintedAt), artisan };
+}
+
 export async function approveEscrowForToken(tokenId) {
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
