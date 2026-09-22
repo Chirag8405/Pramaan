@@ -276,6 +276,9 @@ export default function TransferPage() {
     return Math.max(0, Math.min(100, score));
   }
 
+  // PHASE 5 · STEP 1 (optional) — loads the product's current on-chain state before
+  // creating an escrow, mainly to auto-fill the NFT token ID and show current
+  // ownership/terroir. Not required -- a Token ID can be entered manually instead.
   async function loadProduct(inputHash) {
     const clean = String(inputHash || "").trim();
     if (!clean) {
@@ -664,6 +667,9 @@ export default function TransferPage() {
     }
   }
 
+  // PHASE 5 · STEP 2 — buyer creates the escrow. This is the transaction that
+  // actually locks the buyer's ETH in the EscrowMarketplace contract -- nothing is
+  // paid to the seller yet. Requires a wallet different from the NFT's current owner.
   async function onCreateEscrow(event) {
     event.preventDefault();
 
@@ -879,6 +885,8 @@ export default function TransferPage() {
     }
   }
 
+  // PHASE 5 · STEP 3 — seller grants the escrow contract permission to move their
+  // NFT. Standard ERC-721 approval; without this, STEP 5's release would revert.
   async function onApproveTokenForEscrow() {
     if (!escrowId) {
       setEscrowStatusText("Escrow ID is missing. Create or load escrow first.");
@@ -926,6 +934,8 @@ export default function TransferPage() {
     }
   }
 
+  // PHASE 5 · STEP 4 — seller marks the item shipped, starting the buyer's
+  // confirmation countdown (confirmDeadline) on-chain.
   async function onMarkShipped() {
     if (!escrowId) {
       setEscrowStatusText("Escrow ID is missing. Create escrow first.");
@@ -975,6 +985,10 @@ export default function TransferPage() {
     }
   }
 
+  // PHASE 5 · STEP 5 — buyer confirms delivery. This single call triggers
+  // DynamicRoyalty's payout split (artisan + seller) AND the actual NFT transfer,
+  // money settling before ownership moves. This is the point of no return: once
+  // called, the escrow is Completed.
   async function onConfirmEscrow() {
     if (!escrowId) {
       setEscrowStatusText("Escrow ID is missing. Create escrow first.");

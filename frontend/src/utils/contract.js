@@ -947,6 +947,8 @@ export async function getProductMeta(tokenId) {
     return { terroirScore: Number(terroirScore), provenanceCid, mintedAt: Number(mintedAt), artisan };
 }
 
+// PHASE 5 · STEP 3 (implementation) — plain ERC-721 approve(), scoped inline here
+// since the app doesn't otherwise need a full ERC-721 ABI elsewhere.
 export async function approveEscrowForToken(tokenId) {
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
@@ -973,6 +975,9 @@ export async function approveEscrowForToken(tokenId) {
     return waitForTransactionReceipt(config, { hash: txHash });
 }
 
+// PHASE 5 · STEP 2 (implementation) — sends real ETH as `value`, locked into the
+// EscrowMarketplace contract. Reads back escrowCount() afterward since
+// createEscrow's return value isn't otherwise surfaced by a plain transaction call.
 export async function createEscrowSale(tokenId, sellerAddress, saleValueEth) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
@@ -998,6 +1003,7 @@ export async function createEscrowSale(tokenId, sellerAddress, saleValueEth) {
     };
 }
 
+// PHASE 5 · STEP 4 (implementation).
 export async function markEscrowShipped(escrowId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
@@ -1012,6 +1018,9 @@ export async function markEscrowShipped(escrowId) {
     return waitForTransactionReceipt(config, { hash: txHash });
 }
 
+// PHASE 5 · STEP 5 (implementation) — the single call that triggers both the
+// royalty payout split and the actual NFT transfer on-chain (see
+// EscrowMarketplace._releaseAndTransfer).
 export async function confirmEscrowReceived(escrowId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();

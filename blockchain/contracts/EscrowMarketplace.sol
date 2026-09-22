@@ -86,6 +86,9 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         confirmWindowSec = confirmWindowSeconds;
     }
 
+    // PHASE 5 · STEP 2 (on-chain) — locks msg.value in this contract; nothing is
+    // paid to the seller yet. Requires the seller to genuinely own the token right
+    // now and that it's a real, royalty-registered product, not arbitrary NFT junk.
     function createEscrow(uint256 tokenId, address seller) external payable nonReentrant returns (uint256 escrowId) {
         require(msg.value > 0, "Escrow: sale price is zero");
         require(seller != address(0), "Escrow: invalid seller");
@@ -112,6 +115,7 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         emit EscrowCreated(escrowId, tokenId, msg.sender, seller, msg.value, block.timestamp + shippingWindowSec);
     }
 
+    // PHASE 5 · STEP 4 (on-chain).
     function markShipped(uint256 escrowId) external {
         Escrow storage escrow = escrows[escrowId];
         require(escrow.status == EscrowStatus.Created, "Escrow: invalid status");
@@ -125,6 +129,9 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         emit EscrowShipped(escrowId, escrow.confirmDeadline);
     }
 
+    // PHASE 5 · STEP 5 (on-chain) — the point of no return. Delegates to
+    // _releaseAndTransfer below, which settles the royalty payout BEFORE moving the
+    // NFT -- see that function's own comment for why the ordering matters.
     function confirmReceived(uint256 escrowId) external nonReentrant {
         Escrow storage escrow = escrows[escrowId];
         require(escrow.status == EscrowStatus.Shipped, "Escrow: not ready for confirmation");
@@ -145,6 +152,10 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
 
     /// @notice Permissionless "poke": unsticks an escrow whose deadline has passed without
     /// relying on the buyer or seller remembering to act.
+    // Not currently reachable from any button on /transfer -- fully implemented and
+    // callable directly against the contract, but this specific safety-valve step
+    // isn't wired into the frontend flow yet (same status as ArtisanRegistry's
+    // vouchFor/slash: contract-complete, UI-pending).
     /// @dev Created + shippingDeadline passed  -> same refund path as cancelExpired.
     ///      Shipped + confirmDeadline passed   -> routes into Disputed for owner arbitration
     ///      (does NOT move funds itself; resolveDispute decides the outcome exactly as it
@@ -207,6 +218,10 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         emit EscrowResolved(escrowId, sellerWins, resolution);
     }
 
+    // PHASE 5 · STEP 5 (on-chain, money-before-asset ordering) — checks STEP 3's
+    // approval actually happened, settles the royalty split via DynamicRoyalty, THEN
+    // transfers the NFT (further down, after this snippet) -- money moves before
+    // ownership, closing off a reentrancy window a naive implementation could hit.
     function _releaseAndTransfer(Escrow storage escrow) internal {
         require(productNft.ownerOf(escrow.tokenId) == escrow.seller, "Escrow: seller no longer owner");
 

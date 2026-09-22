@@ -108,6 +108,11 @@ contract DynamicRoyalty is Ownable, ReentrancyGuard {
 
     /// @notice Settles a secondary sale and routes payouts to artisan and seller.
     /// @dev transferCount is incremented per token each time this function succeeds.
+    // PHASE 5 · STEP 5 (on-chain, royalty split) — only EscrowMarketplace can call
+    // this (onlyMarketplace). Applies the tapered royalty curve, then reduces the
+    // artisan's cut by any royaltyPenaltyBps accrued from ArtisanRegistry's
+    // web-of-trust slashing (Phase 1) -- the one place that penalty actually costs
+    // real money.
     function processSecondarySale(uint256 tokenId, address payable seller)
         external
         payable
