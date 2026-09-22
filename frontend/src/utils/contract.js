@@ -1242,6 +1242,7 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng, options 
     }
 }
 
+// PHASE 3 · STEP 6 (implementation) — free view call, no wallet/gas needed.
 export async function isScanNonceUsed(hash, nonce) {
     assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 
@@ -1256,6 +1257,8 @@ export async function isScanNonceUsed(hash, nonce) {
     });
 }
 
+// PHASE 3 · STEP 8 (implementation) — unlike isScanNonceUsed above, this actually
+// sends a transaction that permanently records the nonce on-chain.
 export async function checkpointScanNonce(hash, nonce) {
     assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 
@@ -1309,6 +1312,8 @@ export async function transferProduct(hash, newOwnerAddress, saleValueEth) {
     return waitForTransactionReceipt(config, { hash: txHash });
 }
 
+// PHASE 3 · STEP 3 (implementation) — free view call into
+// ProductRegistry.verifyProduct(). No wallet needed; anyone can call this.
 export async function verifyProduct(hash) {
     assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
 

@@ -100,6 +100,9 @@ export default function VerifyPage() {
       return;
     }
 
+    // PHASE 3 · STEP 2 — landing here with ?hash=... in the URL (from a QR scan, or
+    // any shared link) auto-runs verification immediately, no wallet or manual
+    // submit needed. Anyone can verify any product, for free, at any time.
     setHash(hashFromUrl);
     setAutoVerified(true);
     runVerification(hashFromUrl);
@@ -192,11 +195,23 @@ export default function VerifyPage() {
     setResultData(null);
 
     try {
+      // PHASE 3 · STEP 3 — the core on-chain read: free (no gas, no wallet),
+      // returns the full registration record plus a trust score computed live,
+      // right now, from custody history -- never stored, recalculated every call.
       const { record, terroir } = await verifyProduct(cleanHash);
       const artisan = await getArtisan(record.artisan);
       const sbtId = await getArtisanTokenId(record.artisan);
+      // PHASE 3 · STEP 4 — supplementary history the core record doesn't carry
+      // itself: when it was registered and when each transfer happened, recovered
+      // from past event logs rather than stored fields.
       const eventMeta = await fetchProductEventMetadata(cleanHash);
+      // PHASE 3 · STEP 5 — fetch the actual attestation metadata + image from IPFS,
+      // using the CID the on-chain record points to. This is the off-chain half of
+      // what the on-chain metadataHash proves hasn't been tampered with.
       const { metadataUrl, imageUrl } = await resolveAssetUrls(record.ipfsCid);
+      // PHASE 3 · STEP 6 — a scan nonce, checked for replay. Auto-generated per visit
+      // unless one's already in the input above; isScanNonceUsed is a free read that
+      // just checks, without yet recording anything on-chain (see STEP 8 below).
       const activeNonce = /^0x[0-9a-fA-F]{64}$/.test(scanNonce) ? scanNonce : makeScanNonce();
       const nonceUsed = Boolean(await isScanNonceUsed(cleanHash, activeNonce));
       setScanNonce(activeNonce);
@@ -272,6 +287,10 @@ export default function VerifyPage() {
     await runVerification(hash);
   }
 
+  // PHASE 3 · STEP 8 (optional) — unlike STEP 6's free read, this actually sends a
+  // transaction, permanently recording that this specific nonce was checkpointed
+  // for this product. Requires a connected wallet + gas. Genuinely optional: a scan
+  // can complete (steps 1-7) without ever calling this.
   async function onCheckpointNonce() {
     if (!resultData?.hash || !resultData?.nonce) {
       setStatus("Verify a product first before checkpointing nonce.");
@@ -458,6 +477,10 @@ export default function VerifyPage() {
             <TerritorScore score={resultData.terroir} />
           </div>
 
+          {/* PHASE 3 · STEP 7 — the verdict (AUTHENTIC/CAUTION/COMPROMISED, above),
+              custody history (below), and this re-shareable QR are the payoff of
+              steps 3-6: everything needed to trust -- or distrust -- this product,
+              derived live from on-chain + IPFS data, not asserted by anyone. */}
           <div className="grid max-w-4xl gap-2 rounded-xl border border-[#26312b] bg-[#131917] p-3" style={{ width: "fit-content" }}>
             <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">
               Share / Re-scan This Verification

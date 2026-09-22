@@ -120,6 +120,10 @@ contract ProductRegistry {
         emit ProductProvenanceSigned(hash, metadataHash, provenanceSigner, deviceSignature);
     }
 
+    // PHASE 3 · STEP 8 (on-chain) — permanently records that this scan nonce was
+    // checked for this product. `replayed` is computed and returned in the SAME call
+    // that marks it used, so the caller learns the answer and the record updates
+    // atomically -- no separate read-then-write race.
     function checkpointScanNonce(bytes32 hash, bytes32 nonce) external returns (bool replayed) {
         ProductRecord storage product = products[hash];
         require(product.registeredAt != 0, "Product not found");
@@ -165,6 +169,11 @@ contract ProductRegistry {
         emit ProductTransferred(hash, msg.sender, newOwner, product.transferCount, royaltyBps, royaltyAmount);
     }
 
+    // PHASE 3 · STEP 3 (on-chain) — the core free read every verification runs.
+    // `view`, so this costs no gas and needs no wallet. The trust score below is
+    // computed fresh on every single call, straight from stored custody history --
+    // it's never itself written to storage, so it can't go stale or be tampered with
+    // independently of the underlying handler/transfer data.
     function verifyProduct(bytes32 hash) public view returns (ProductRecord memory, uint8 terroir) {
         ProductRecord memory product = products[hash];
         require(product.registeredAt != 0, "Product not found");

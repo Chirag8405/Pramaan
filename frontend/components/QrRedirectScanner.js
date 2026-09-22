@@ -42,6 +42,10 @@ export default function QrRedirectScanner() {
     const [status, setStatus] = useState("Point your camera at a Pramaan QR code.");
     const [hasRedirected, setHasRedirected] = useState(false);
 
+    // PHASE 3 · STEP 1 — decodes whatever's in the scanned QR as a URL and navigates
+    // there. Doesn't care how the QR was made; it just expects the QR's contents to
+    // be a valid URL pointing at /verify?hash=... (see register-product/page.js and
+    // verify/page.js, both of which render a QRCodeSVG with exactly that shape).
     const handleScan = useCallback(
         (payload) => {
             if (hasRedirected) {
