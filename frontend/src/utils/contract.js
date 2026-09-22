@@ -713,6 +713,9 @@ export async function verifyCraftImage(file) {
     return payload;
 }
 
+// PHASE 2 · STEP 6 (implementation) — calls ProductNFT.mintProduct() on-chain, which
+// requires isVerifiedArtisan(msg.sender) and terroirScore >= 70, then internally
+// registers this artisan as the token's original minter with DynamicRoyalty.
 export async function mintProductTwin(recipient, tokenUri, terroirScore, provenanceCid) {
     assertConfiguredAddress(PRODUCT_NFT_ADDRESS, "PRODUCT_NFT_ADDRESS");
     await connectWallet();
@@ -1114,6 +1117,11 @@ export async function executeSecondarySale(tokenId, sellerAddress, saleValueEth)
 }
 
 // Legacy product registry helpers retained for backward compatibility.
+// PHASE 2 · STEP 5 (implementation) — computes the attestation digest and gets it
+// signed (by default, this same wallet signs for itself, acting as its own "device"
+// unless options.provenanceSigner/deviceSignature override that), then calls
+// ProductRegistry.registerProduct() on-chain, which independently re-verifies that
+// signature via ECDSA recovery before storing anything.
 export async function registerProduct(hash, cid, name, giTag, lat, lng, options = {}) {
     assertConfiguredAddress(ARTISAN_REGISTRY_ADDRESS, "ARTISAN_REGISTRY_ADDRESS");
     assertConfiguredAddress(PRODUCT_REGISTRY_ADDRESS, "PRODUCT_REGISTRY_ADDRESS");
@@ -1187,6 +1195,10 @@ export async function registerProduct(hash, cid, name, giTag, lat, lng, options 
         )
     );
 
+    // The moment of "device signing": either a real, separate device's signature was
+    // supplied (options.deviceSignature), or -- the demo default -- this wallet signs
+    // the digest for itself. Either way, ProductRegistry.sol recovers the signer from
+    // this signature on-chain and checks it matches provenanceSigner above.
     let deviceSignature = "";
     if (options.deviceSignature) {
         deviceSignature = normalizeSignatureBytes(options.deviceSignature);

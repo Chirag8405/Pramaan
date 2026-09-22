@@ -56,6 +56,10 @@ contract ProductNFT is ERC721URIStorage {
     /// @param tokenUri Full metadata URI.
     /// @param terroirScore AI score from 0..100.
     /// @param provenanceCid Content-addressed CID for craft proof assets.
+    // PHASE 2 · STEP 6 (on-chain) — mints the tradeable "digital twin" NFT, gated on
+    // Phase 1's isVerifiedArtisan() AND the AI vision score from step 2. terroirScore
+    // is frozen into productMeta below forever, then registerOriginalMinter() hands
+    // off to DynamicRoyalty -- the piece that makes Phase 5's resale royalties work.
     function mintProduct(
         address recipient,
         string calldata tokenUri,

@@ -1,3 +1,7 @@
+// PHASE 2 · STEP 1 — computes the product's permanent, unique ID client-side, the
+// moment an image is selected (app/register-product/page.js's onImageChange). A
+// plain SHA-256 of the raw image bytes -- this becomes the bytes32 key ProductRegistry
+// stores the whole record under, and what every /verify?hash=... link points at.
 export async function hashProduct(file) {
   if (!file) {
     throw new Error("hashProduct requires a file.");

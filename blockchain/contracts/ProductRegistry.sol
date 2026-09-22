@@ -61,6 +61,11 @@ contract ProductRegistry {
         artisanRegistry = IArtisanRegistry(artisanRegistryAddress);
     }
 
+    // PHASE 2 · STEP 5 (on-chain) — anchors the product record permanently. Requires
+    // Phase 1's isVerifiedArtisan() gate, then re-derives the same attestation digest
+    // the frontend computed (src/utils/contract.js) and recovers who actually signed
+    // deviceSignature -- proving cryptographically that provenanceSigner really did
+    // attest to these exact fields, without trusting the caller's word for it.
     function registerProduct(
         bytes32 hash,
         string calldata cid,
@@ -91,6 +96,7 @@ contract ProductRegistry {
         );
         require(!usedAttestationDigests[attestationDigest], "Attestation already used");
 
+        // The actual signature-recovery check -- the cryptographic core of this step.
         address recoveredSigner = attestationDigest.toEthSignedMessageHash().recover(deviceSignature);
         require(recoveredSigner == provenanceSigner, "Invalid provenance attestation");
 

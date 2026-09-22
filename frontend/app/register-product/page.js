@@ -178,6 +178,10 @@ export default function RegisterProductPage() {
     };
   }, []);
 
+  // PHASE 2 · STEP 2 — sends the image to /api/verify-craft, a real vision-LLM call
+  // (OpenAI or Gemini) that judges whether it genuinely looks like an artisan
+  // workshop scene. The returned score gates both submission below (>= 70 required)
+  // and, later, the on-chain NFT mint itself (ProductNFT.MIN_TERROIR_SCORE).
   async function runAiCheck(file) {
     setAiChecking(true);
     setAiScore(null);
@@ -220,6 +224,8 @@ export default function RegisterProductPage() {
 
     setPreviewUrl(URL.createObjectURL(file));
 
+    // PHASE 2 · STEP 1 — hash the image the moment it's selected (before any upload
+    // or submit) so productHash exists as soon as possible for the UI to display.
     try {
       const hash = await hashProduct(file);
       setProductHash(hash);
@@ -227,6 +233,8 @@ export default function RegisterProductPage() {
       setStatusText(error?.message || "Could not hash selected file.");
     }
 
+    // PHASE 2 · STEP 2 — kick off the AI authenticity check immediately too, in
+    // parallel with the user filling out the rest of the form below.
     await runAiCheck(file);
   }
 
@@ -296,9 +304,16 @@ export default function RegisterProductPage() {
     setStepProgress("Step 1/4: Uploading product image to IPFS...");
 
     try {
+      // PHASE 2 · STEP 3 — upload the raw image to IPFS (via Pinata, through our own
+      // /api/ipfs/upload route). Returns a CID; the image itself now lives on IPFS,
+      // not on this app's own server.
       const imageCid = await uploadToIPFS(productImage);
       const autoBatch = buildAutoBatchIdentity(productHash);
 
+      // PHASE 2 · STEP 4 — build the attestation metadata JSON, embedding the image's
+      // CID plus batch identity, and upload THAT to IPFS too. This second CID (not
+      // the image's) is what actually gets stored on-chain as ProductRegistry's
+      // ipfsCid -- fetching it is what recovers the image CID + batch info later.
       const metadataPayload = {
         schema: "pramaan.attestation.v1",
         productHash,
@@ -342,6 +357,12 @@ export default function RegisterProductPage() {
         throw new Error("Custom provenance signer requires explicit device signature.");
       }
 
+      // PHASE 2 · STEP 5 — anchor the product on-chain. Inside registerProduct()
+      // (src/utils/contract.js) this computes a metadataHash binding these on-chain
+      // fields to the IPFS content, then signs an attestation digest -- by default
+      // with this same wallet acting as its own "device", unless a separate
+      // provenanceSigner/deviceSignature was supplied below. ProductRegistry.sol then
+      // verifies that signature on-chain via ECDSA recovery before storing anything.
       const receipt = await registerProduct(
         productHash,
         metadataCid,
@@ -363,10 +384,12 @@ export default function RegisterProductPage() {
 
       const metadataUrl = getIPFSUrl(metadataCid);
 
-      // aiScore was already validated (>= 70) above, before any IPFS/on-chain
-      // calls were made — this is the real AI vision score, not a custody
-      // read, matching what ProductNFT.mintProduct's terroirScore param
-      // actually gates on.
+      // PHASE 2 · STEP 6 — mint the "digital twin" NFT. aiScore was already validated
+      // (>= 70) above, before any IPFS/on-chain calls were made — this is the real AI
+      // vision score, not a custody read, matching what ProductNFT.mintProduct's
+      // terroirScore param actually gates on. Internally this also registers this
+      // artisan as the token's original minter with DynamicRoyalty, which is what
+      // makes future resale royalty payouts possible (Phase 5).
       const mintResult = await mintProductTwin(
         walletAddress,
         metadataUrl,
@@ -401,9 +424,10 @@ export default function RegisterProductPage() {
         "/transfer?hash=" +
         productHash +
         (mintedTokenId ? "&tokenId=" + encodeURIComponent(mintedTokenId) : "");
-      // Absolute, not relative -- this is what actually gets encoded into the QR code.
-      // A phone scanning the code is a different device than the one that registered
-      // the product, so "/verify?hash=..." alone would have nothing to resolve against.
+      // PHASE 2 · STEP 7 — build the shareable verify link and QR code (rendered
+      // below in the success card). Absolute, not relative: a phone scanning the
+      // code is a different device than the one that registered the product, so
+      // "/verify?hash=..." alone would have nothing to resolve against.
       const verifyUrlAbsolute = getShareBaseUrl() + verifyUrl;
 
       setSuccess({

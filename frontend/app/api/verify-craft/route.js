@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+// PHASE 2 · STEP 2 (server) — the actual vision-LLM call that produces the terroir
+// score. Called from the client via verifyCraftImage() (src/utils/contract.js) the
+// moment a product image is selected, before the user even submits the form.
 const SYSTEM_PROMPT =
     "You are an expert handicraft auditor. Analyze this image. Does it clearly show an artisan in a workshop setting with raw materials and traditional tools? Return ONLY a JSON object with two keys: 'terroir_score' (integer 0-100) and 'reason' (1 sentence string).";
 
