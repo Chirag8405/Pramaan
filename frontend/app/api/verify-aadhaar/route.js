@@ -26,16 +26,32 @@ const signer = provider && backendSignerKey ? new ethers.Wallet(backendSignerKey
 const artisanRegistry =
     signer && ARTISAN_REGISTRY_ADDRESS ? new ethers.Contract(ARTISAN_REGISTRY_ADDRESS, ARTISAN_ABI, signer) : null;
 
+// Every read this route does (signer authorization, signer balance, target artisan lookup,
+// and the callStatic preflight below) is intentionally connected to `provider` directly,
+// NOT to `signer`. A Wallet-connected contract's calls route through ethers'
+// Signer.call() -> populateTransaction(), which behaves differently from a plain
+// Provider's call() in ways that were repeatedly implicated this session: every local
+// reproduction of this route's on-chain failures decoded cleanly using a
+// Provider-connected contract (with an explicit `from` override where the caller's
+// identity mattered), while the equivalent Signer-connected calls in this route's actual
+// production runtime kept coming back as an undecoded, contentless CALL_EXCEPTION for at
+// least three different underlying conditions -- strongly suggesting the Signer.call()
+// path itself is unreliable in this specific serverless runtime, not the RPC endpoint or
+// the on-chain state being queried. Reads never need signing capability anyway, so there's
+// no downside to sidestepping that path entirely; only the real send below (which must
+// actually sign) still needs the Signer-connected `artisanRegistry`.
+//
 // `aadhaarVerifier` is a public mapping on ArtisanRegistry, so Solidity auto-generates this
 // getter -- it's just not part of the app-wide ARTISAN_ABI (which only lists the functions
-// the rest of the frontend actually calls). Declared separately here rather than adding it
-// to the shared ABI, since nothing else needs it.
-const artisanRegistryDiagnostics =
-    signer && ARTISAN_REGISTRY_ADDRESS
+// the rest of the frontend actually calls). Combined with ARTISAN_ABI here (rather than
+// adding it to the shared ABI, since nothing else needs it) so one reader contract covers
+// every read this route does.
+const artisanRegistryReader =
+    provider && ARTISAN_REGISTRY_ADDRESS
         ? new ethers.Contract(
               ARTISAN_REGISTRY_ADDRESS,
-              ["function aadhaarVerifier(address) view returns (bool)"],
-              signer
+              [...ARTISAN_ABI, "function aadhaarVerifier(address) view returns (bool)"],
+              provider
           )
         : null;
 
@@ -61,13 +77,21 @@ function isUndecodedCallException(error) {
 // transient runtime hiccup, not a real on-chain condition (a real one just returns the
 // requested data). Retrying resolves that far more reliably than surfacing it to the user
 // as an opaque error for what the chain would have answered cleanly a moment later.
-async function withRpcRetry(fn, attempts = 3, backoffsMs = [300, 900]) {
+async function withRpcRetry(fn, label, attempts = 3, backoffsMs = [300, 900]) {
     let lastError;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
         try {
             return await fn();
         } catch (error) {
             lastError = error;
+            // Per-attempt, not just the final failure -- so if every attempt still fails
+            // despite the retry, the log shows what actually happened each time instead of
+            // only the last one.
+            console.error(
+                `[verify-aadhaar] ${label} attempt ${attempt + 1}/${attempts} failed:`,
+                error?.code,
+                error?.message
+            );
             if (attempt < attempts - 1) {
                 await delay(backoffsMs[attempt] ?? backoffsMs[backoffsMs.length - 1]);
             }
@@ -87,6 +111,11 @@ async function withUndecodedCallRetry(fn, attempts = 3, backoffsMs = [300, 900])
             return await fn();
         } catch (error) {
             lastError = error;
+            console.error(
+                `[verify-aadhaar] callstatic-preflight attempt ${attempt + 1}/${attempts} failed:`,
+                error?.code,
+                error?.reason || error?.message
+            );
             const retryable = attempt < attempts - 1 && (error?.code !== "CALL_EXCEPTION" || isUndecodedCallException(error));
             if (!retryable) {
                 throw error;
@@ -130,8 +159,8 @@ const MARK_VERIFIED_GAS_OVERRIDES = {
 // normal decoded revert reason.
 async function diagnosePermanentSignerIssue() {
     const [isAuthorized, balance] = await Promise.all([
-        withRpcRetry(() => artisanRegistryDiagnostics.aadhaarVerifier(signer.address)),
-        withRpcRetry(() => provider.getBalance(signer.address))
+        withRpcRetry(() => artisanRegistryReader.aadhaarVerifier(signer.address), "signer-authorization-check"),
+        withRpcRetry(() => provider.getBalance(signer.address), "signer-balance-check")
     ]);
 
     const worstCaseCost = ethers.BigNumber.from(MARK_VERIFIED_GAS_OVERRIDES.gasLimit).mul(
@@ -173,7 +202,7 @@ async function diagnosePermanentSignerIssue() {
 // callStatic hit it in production. Root cause not fully understood, but this direct read
 // is unaffected by it either way.
 async function diagnoseTargetArtisanIssue(walletAddress) {
-    const profile = await withRpcRetry(() => artisanRegistry.getArtisan(walletAddress));
+    const profile = await withRpcRetry(() => artisanRegistryReader.getArtisan(walletAddress), "target-artisan-lookup");
     if (ethers.BigNumber.from(profile.registeredAt).isZero()) {
         return "This wallet is not registered as an artisan yet. Register as an artisan first, then verify Aadhaar.";
     }
@@ -209,10 +238,20 @@ function taggedError(error, stage) {
 }
 
 async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoffsMs = [500, 1500]) {
-    const [permanentIssue, targetIssue] = await Promise.all([
-        diagnosePermanentSignerIssue(),
-        diagnoseTargetArtisanIssue(walletAddress)
-    ]);
+    let permanentIssue;
+    let targetIssue;
+    try {
+        [permanentIssue, targetIssue] = await Promise.all([
+            diagnosePermanentSignerIssue(),
+            diagnoseTargetArtisanIssue(walletAddress)
+        ]);
+    } catch (error) {
+        // A diagnostic read itself failing (after withRpcRetry already exhausted its own
+        // retries) is distinct from either diagnostic cleanly returning a real problem
+        // message below -- tag it so the log doesn't show "unknown" the way it did before
+        // this retry/tagging existed for this specific path.
+        throw taggedError(error, "diagnostics-read-failed");
+    }
     if (permanentIssue) {
         throw taggedError(new Error(permanentIssue), "signer-diagnostics");
     }
@@ -221,7 +260,9 @@ async function markAadhaarVerifiedWithRetry(walletAddress, attempts = 3, backoff
     }
 
     try {
-        await withUndecodedCallRetry(() => artisanRegistry.callStatic.markAadhaarVerified(walletAddress));
+        await withUndecodedCallRetry(() =>
+            artisanRegistryReader.callStatic.markAadhaarVerified(walletAddress, { from: signer.address })
+        );
     } catch (error) {
         if (error?.code === "CALL_EXCEPTION") {
             throw taggedError(error, "callstatic-preflight");
