@@ -1083,7 +1083,23 @@ export async function raiseEscrowDispute(escrowId, reason) {
 export async function getEscrowDetails(escrowId) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
 
-    const escrow = await readContract(config, {
+    // readContract returns a multi-output result as a positional array, not a
+    // named object -- destructure by position (matching ESCROW_MARKETPLACE_ABI's
+    // "escrows" outputs order in src/utils/abi.js) rather than accessing named
+    // fields, which would all silently resolve to undefined.
+    const [
+        id,
+        tokenId,
+        buyer,
+        seller,
+        salePrice,
+        createdAt,
+        shippedAt,
+        shippingDeadline,
+        confirmDeadline,
+        status,
+        disputeReason
+    ] = await readContract(config, {
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "escrows",
@@ -1091,18 +1107,18 @@ export async function getEscrowDetails(escrowId) {
     });
 
     return {
-        id: Number(escrow.id),
-        tokenId: Number(escrow.tokenId),
-        buyer: escrow.buyer,
-        seller: escrow.seller,
-        salePriceWei: escrow.salePrice,
-        salePriceEth: formatEther(escrow.salePrice),
-        createdAt: Number(escrow.createdAt),
-        shippedAt: Number(escrow.shippedAt),
-        shippingDeadline: Number(escrow.shippingDeadline),
-        confirmDeadline: Number(escrow.confirmDeadline),
-        status: Number(escrow.status),
-        disputeReason: escrow.disputeReason
+        id: Number(id),
+        tokenId: Number(tokenId),
+        buyer,
+        seller,
+        salePriceWei: salePrice,
+        salePriceEth: formatEther(salePrice),
+        createdAt: Number(createdAt),
+        shippedAt: Number(shippedAt),
+        shippingDeadline: Number(shippingDeadline),
+        confirmDeadline: Number(confirmDeadline),
+        status: Number(status),
+        disputeReason
     };
 }
 
