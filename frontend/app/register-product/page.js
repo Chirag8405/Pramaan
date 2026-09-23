@@ -20,6 +20,7 @@ import {
   registerProduct,
   verifyCraftImage
 } from "../../src/utils/contract";
+import { appendEvidenceEntry } from "../../src/utils/evidence";
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
 
@@ -440,6 +441,15 @@ export default function RegisterProductPage() {
         verifyUrl,
         transferUrl
       });
+
+      if (txHash) {
+        appendEvidenceEntry({
+          action: "Product Registered",
+          productHash,
+          txUrl: "https://sepolia.etherscan.io/tx/" + txHash,
+          notes: form.name.trim() + " -- terroir score " + aiScore + (mintTxHash ? ", NFT minted (tx: https://sepolia.etherscan.io/tx/" + mintTxHash + ")" : "")
+        });
+      }
 
       if (typeof window !== "undefined") {
         const snapshot = {
