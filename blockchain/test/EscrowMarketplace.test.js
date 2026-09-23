@@ -1,6 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
+const { computeAttestationDigest, signAttestationDigest } = require("./helpers/attestation");
 
 // Real values from scripts/deploy.js — do not invent different windows.
 const SHIPPING_WINDOW_SEC = 2 * 24 * 60 * 60; // 2 days
@@ -107,7 +108,8 @@ describe("EscrowMarketplace", function () {
         }
 
         const salePrice = overrides.salePrice || ethers.parseEther("1");
-        const tx = await escrow.connect(buyer).createEscrow(tokenId, artisan.address, { value: salePrice });
+        const productHash = overrides.productHash || ethers.ZeroHash;
+        const tx = await escrow.connect(buyer).createEscrow(tokenId, artisan.address, productHash, { value: salePrice });
         const receipt = await tx.wait();
         const parsed = receipt.logs
             .map((log) => {
@@ -133,7 +135,7 @@ describe("EscrowMarketplace", function () {
             const createdAtBlock = await ethers.provider.getBlock("latest");
             const expectedShippingDeadline = BigInt(createdAtBlock.timestamp + 1 + SHIPPING_WINDOW_SEC);
 
-            await expect(escrow.connect(buyer).createEscrow(tokenId, artisan.address, { value: salePrice }))
+            await expect(escrow.connect(buyer).createEscrow(tokenId, artisan.address, ethers.ZeroHash, { value: salePrice }))
                 .to.emit(escrow, "EscrowCreated")
                 .withArgs(1n, tokenId, buyer.address, artisan.address, salePrice, anyUint());
 
@@ -153,7 +155,7 @@ describe("EscrowMarketplace", function () {
             const tokenId = await mintToArtisan(ctx);
 
             await expect(
-                escrow.connect(buyer).createEscrow(tokenId, artisan.address, { value: 0 })
+                escrow.connect(buyer).createEscrow(tokenId, artisan.address, ethers.ZeroHash, { value: 0 })
             ).to.be.revertedWith("Escrow: sale price is zero");
         });
 
@@ -163,7 +165,7 @@ describe("EscrowMarketplace", function () {
             const tokenId = await mintToArtisan(ctx);
 
             await expect(
-                escrow.connect(buyer).createEscrow(tokenId, ethers.ZeroAddress, { value: ethers.parseEther("1") })
+                escrow.connect(buyer).createEscrow(tokenId, ethers.ZeroAddress, ethers.ZeroHash, { value: ethers.parseEther("1") })
             ).to.be.revertedWith("Escrow: invalid seller");
         });
 
@@ -173,7 +175,7 @@ describe("EscrowMarketplace", function () {
             const tokenId = await mintToArtisan(ctx);
 
             await expect(
-                escrow.connect(artisan).createEscrow(tokenId, artisan.address, { value: ethers.parseEther("1") })
+                escrow.connect(artisan).createEscrow(tokenId, artisan.address, ethers.ZeroHash, { value: ethers.parseEther("1") })
             ).to.be.revertedWith("Escrow: buyer and seller cannot match");
         });
 
@@ -183,7 +185,7 @@ describe("EscrowMarketplace", function () {
             const tokenId = await mintToArtisan(ctx);
 
             await expect(
-                escrow.connect(buyer).createEscrow(tokenId, stranger.address, { value: ethers.parseEther("1") })
+                escrow.connect(buyer).createEscrow(tokenId, stranger.address, ethers.ZeroHash, { value: ethers.parseEther("1") })
             ).to.be.revertedWith("Escrow: seller is not current owner");
         });
 
@@ -196,7 +198,7 @@ describe("EscrowMarketplace", function () {
             // nonexistent token — so this reverts on ownerOf, not the intended guard.
             // We confirm the actual revert path rather than assuming which check fires.
             await expect(
-                escrow.connect(buyer).createEscrow(999, artisan.address, { value: ethers.parseEther("1") })
+                escrow.connect(buyer).createEscrow(999, artisan.address, ethers.ZeroHash, { value: ethers.parseEther("1") })
             ).to.be.reverted;
         });
     });
@@ -308,7 +310,7 @@ describe("EscrowMarketplace", function () {
             await productNFT.connect(otherArtisan).approve(escrowAddress, tokenId);
 
             const salePrice = ethers.parseEther("1");
-            const createTx = await escrow.connect(buyer).createEscrow(tokenId, otherArtisan.address, { value: salePrice });
+            const createTx = await escrow.connect(buyer).createEscrow(tokenId, otherArtisan.address, ethers.ZeroHash, { value: salePrice });
             const createReceipt = await createTx.wait();
             const escrowId = createReceipt.logs
                 .map((l) => {
@@ -867,6 +869,124 @@ describe("EscrowMarketplace", function () {
             const secondRecord = await escrow.escrows(second.escrowId);
             expect(firstRecord.status).to.equal(EscrowStatus.Shipped);
             expect(secondRecord.status).to.equal(EscrowStatus.Created);
+        });
+    });
+
+    describe("ProductRegistry custody-chain sync", function () {
+        // Deploys ProductRegistry on top of the base fixture, wires it to the escrow
+        // contract exactly as scripts/deploy.js does, and registers a real product
+        // owned by `artisan` so a full escrow settlement has a productHash to sync.
+        async function deployWithRegistryFixture() {
+            const ctx = await deployFixture();
+            const { owner, artisan, artisanRegistry, escrow, escrowAddress } = ctx;
+
+            const ProductRegistry = await ethers.getContractFactory("ProductRegistry");
+            const productRegistry = await ProductRegistry.deploy(await artisanRegistry.getAddress());
+            await productRegistry.waitForDeployment();
+            const productRegistryAddress = await productRegistry.getAddress();
+
+            await productRegistry.connect(owner).setEscrowMarketplace(escrowAddress);
+            await escrow.connect(owner).setProductRegistry(productRegistryAddress);
+
+            const productHash = ethers.keccak256(ethers.toUtf8Bytes("escrow-synced-product"));
+            const metadataHash = ethers.keccak256(ethers.toUtf8Bytes("escrow-synced-metadata"));
+            const network = await ethers.provider.getNetwork();
+            const digest = computeAttestationDigest({
+                chainId: network.chainId,
+                contractAddress: productRegistryAddress,
+                productHash,
+                metadataHash,
+                artisan: artisan.address,
+                provenanceSigner: artisan.address,
+                cid: "bafybeigdyrztest",
+                name: "Escrow-Synced Pot",
+                giTag: "Khurja Pottery",
+                lat: 2683400n,
+                lng: 8825500n
+            });
+            const deviceSignature = await signAttestationDigest(artisan, digest);
+
+            await productRegistry
+                .connect(artisan)
+                .registerProduct(
+                    productHash,
+                    "bafybeigdyrztest",
+                    "Escrow-Synced Pot",
+                    "Khurja Pottery",
+                    metadataHash,
+                    artisan.address,
+                    deviceSignature,
+                    2683400n,
+                    8825500n
+                );
+
+            return { ...ctx, productRegistry, productRegistryAddress, productHash };
+        }
+
+        it("appends the buyer as a new handler and bumps transferCount once escrow settles", async function () {
+            const ctx = await loadFixture(deployWithRegistryFixture);
+            const { artisan, buyer, escrow, productRegistry, productHash } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx, { productHash });
+
+            await escrow.connect(artisan).markShipped(escrowId);
+            await escrow.connect(buyer).confirmReceived(escrowId);
+
+            const [record] = await productRegistry.verifyProduct(productHash);
+            expect(record.transferCount).to.equal(1n);
+            expect(record.handlers).to.deep.equal([buyer.address]);
+            expect(record.handlerVerified).to.deep.equal([false]); // buyer never registered as an artisan
+        });
+
+        it("emits ProductTransferred with royaltyBps/Amount both zero (DynamicRoyalty already paid the real royalty)", async function () {
+            const ctx = await loadFixture(deployWithRegistryFixture);
+            const { artisan, buyer, escrow, productRegistry, productHash } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx, { productHash });
+
+            await escrow.connect(artisan).markShipped(escrowId);
+
+            await expect(escrow.connect(buyer).confirmReceived(escrowId))
+                .to.emit(productRegistry, "ProductTransferred")
+                .withArgs(productHash, artisan.address, buyer.address, 1n, 0n, 0n);
+        });
+
+        it("skips the sync (no revert) when the escrow was created with productHash = 0", async function () {
+            const ctx = await loadFixture(deployWithRegistryFixture);
+            const { artisan, buyer, escrow, productRegistry, productHash } = ctx;
+            const { escrowId } = await createEscrowFixture(ctx); // no productHash override -> ZeroHash
+
+            await escrow.connect(artisan).markShipped(escrowId);
+            await expect(escrow.connect(buyer).confirmReceived(escrowId)).to.not.be.reverted;
+
+            const [record] = await productRegistry.verifyProduct(productHash);
+            expect(record.transferCount).to.equal(0n); // unrelated product, untouched
+        });
+
+        it("settles normally (no revert) when productRegistry was never wired up at all", async function () {
+            const ctx = await loadFixture(deployFixture); // base fixture -- no setProductRegistry call
+            const { artisan, buyer, escrow } = ctx;
+            const someHash = ethers.keccak256(ethers.toUtf8Bytes("never-registered"));
+            const { escrowId } = await createEscrowFixture(ctx, { productHash: someHash });
+
+            await escrow.connect(artisan).markShipped(escrowId);
+            await expect(escrow.connect(buyer).confirmReceived(escrowId)).to.not.be.reverted;
+        });
+
+        it("emits ProductRegistrySyncFailed (without reverting settlement) when the hash isn't registered in ProductRegistry", async function () {
+            const ctx = await loadFixture(deployWithRegistryFixture);
+            const { artisan, buyer, escrow } = ctx;
+            const unregisteredHash = ethers.keccak256(ethers.toUtf8Bytes("not-actually-registered"));
+            const { escrowId } = await createEscrowFixture(ctx, { productHash: unregisteredHash });
+
+            await escrow.connect(artisan).markShipped(escrowId);
+
+            const tx = escrow.connect(buyer).confirmReceived(escrowId);
+            await expect(tx).to.not.be.reverted;
+            await expect(tx)
+                .to.emit(escrow, "ProductRegistrySyncFailed")
+                .withArgs(escrowId, unregisteredHash);
+
+            const record = await escrow.escrows(escrowId);
+            expect(record.status).to.equal(EscrowStatus.Completed); // settlement itself still went through
         });
     });
 });

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 interface IArtisanRegistry {
     function isVerifiedArtisan(address wallet) external view returns (bool);
 }
 
-contract ProductRegistry {
+contract ProductRegistry is Ownable {
     using ECDSA for bytes32;
 
     struct ProductRecord {
@@ -28,6 +29,14 @@ contract ProductRegistry {
     }
 
     IArtisanRegistry public immutable artisanRegistry;
+
+    // The EscrowMarketplace contract, authorized to record a custody-chain update
+    // (recordEscrowTransfer below) once an escrow settles -- the escrow flow moves
+    // the NFT and pays royalties itself via ProductNFT/DynamicRoyalty, but has no
+    // other way to tell this contract's independent handlers[]/transferCount
+    // bookkeeping (what /verify's Custody History and terroir score read) that a
+    // transfer happened at all.
+    address public escrowMarketplace;
 
     mapping(bytes32 => ProductRecord) public products;
     mapping(bytes32 => mapping(bytes32 => bool)) public usedScanNonces;
@@ -55,10 +64,19 @@ contract ProductRegistry {
         bool replayed,
         uint256 timestamp
     );
+    event EscrowMarketplaceUpdated(address indexed marketplace);
 
     constructor(address artisanRegistryAddress) {
         require(artisanRegistryAddress != address(0), "Invalid artisan registry");
         artisanRegistry = IArtisanRegistry(artisanRegistryAddress);
+    }
+
+    /// @notice Wires up the one EscrowMarketplace contract allowed to call
+    /// recordEscrowTransfer -- mirrors DynamicRoyalty.setMarketplace's pattern.
+    function setEscrowMarketplace(address marketplaceAddress) external onlyOwner {
+        require(marketplaceAddress != address(0), "Invalid marketplace");
+        escrowMarketplace = marketplaceAddress;
+        emit EscrowMarketplaceUpdated(marketplaceAddress);
     }
 
     // PHASE 2 · STEP 5 (on-chain) — anchors the product record permanently. Requires
@@ -147,12 +165,8 @@ contract ProductRegistry {
         require(newOwner != address(0), "Invalid new owner");
         require(_currentOwner(product) == msg.sender, "Caller is not current owner");
 
-        product.handlers.push(newOwner);
-        bool isHandlerVerified = artisanRegistry.isVerifiedArtisan(newOwner);
-        product.handlerVerified.push(isHandlerVerified);
-        product.transferCount += 1;
-
-        uint256 royaltyBps = _quadraticRoyaltyBps(product.transferCount);
+        uint256 transferCount = _recordHandoff(product, newOwner);
+        uint256 royaltyBps = _quadraticRoyaltyBps(transferCount);
         uint256 royaltyAmount = (msg.value * royaltyBps) / 10000;
 
         if (royaltyAmount > 0) {
@@ -166,7 +180,34 @@ contract ProductRegistry {
             require(paidSeller, "Seller payout failed");
         }
 
-        emit ProductTransferred(hash, msg.sender, newOwner, product.transferCount, royaltyBps, royaltyAmount);
+        emit ProductTransferred(hash, msg.sender, newOwner, transferCount, royaltyBps, royaltyAmount);
+    }
+
+    /// @notice Records a custody-chain update for a transfer that already happened
+    /// (and was already paid for) through EscrowMarketplace -- that contract settles
+    /// royalties itself via DynamicRoyalty and moves the NFT via ProductNFT directly,
+    /// so this just keeps this contract's independent handlers[]/transferCount record
+    /// (what /verify's Custody History and terroir score are computed from) in sync
+    /// with what actually happened on-chain. No payment moves here; royaltyBps/Amount
+    /// are reported as 0 in the emitted event since DynamicRoyalty already paid out.
+    function recordEscrowTransfer(bytes32 hash, address newOwner) external {
+        require(msg.sender == escrowMarketplace, "ProductRegistry: only escrow marketplace");
+        ProductRecord storage product = products[hash];
+        require(product.registeredAt != 0, "Product not found");
+        require(newOwner != address(0), "Invalid new owner");
+
+        address previousOwner = _currentOwner(product);
+        uint256 transferCount = _recordHandoff(product, newOwner);
+
+        emit ProductTransferred(hash, previousOwner, newOwner, transferCount, 0, 0);
+    }
+
+    function _recordHandoff(ProductRecord storage product, address newOwner) internal returns (uint256 transferCount) {
+        product.handlers.push(newOwner);
+        bool isHandlerVerified = artisanRegistry.isVerifiedArtisan(newOwner);
+        product.handlerVerified.push(isHandlerVerified);
+        product.transferCount += 1;
+        return product.transferCount;
     }
 
     // PHASE 3 · STEP 3 (on-chain) — the core free read every verification runs.

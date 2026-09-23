@@ -738,7 +738,8 @@ export default function TransferPage() {
       const { receipt, escrowId: createdEscrowId } = await createEscrowSale(
         Number(escrowTokenId),
         derivedSeller,
-        escrowAmountEth
+        escrowAmountEth,
+        hash
       );
 
       setEscrowSeller(derivedSeller);

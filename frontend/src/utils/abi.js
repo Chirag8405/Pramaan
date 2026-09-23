@@ -178,7 +178,8 @@ export const ESCROW_MARKETPLACE_ABI = [
   {
     inputs: [
       { internalType: "uint256", name: "tokenId", type: "uint256" },
-      { internalType: "address", name: "seller", type: "address" }
+      { internalType: "address", name: "seller", type: "address" },
+      { internalType: "bytes32", name: "productHash", type: "bytes32" }
     ],
     name: "createEscrow",
     outputs: [{ internalType: "uint256", name: "escrowId", type: "uint256" }],
@@ -229,6 +230,7 @@ export const ESCROW_MARKETPLACE_ABI = [
     outputs: [
       { internalType: "uint256", name: "id", type: "uint256" },
       { internalType: "uint256", name: "tokenId", type: "uint256" },
+      { internalType: "bytes32", name: "productHash", type: "bytes32" },
       { internalType: "address", name: "buyer", type: "address" },
       { internalType: "address", name: "seller", type: "address" },
       { internalType: "uint256", name: "salePrice", type: "uint256" },
