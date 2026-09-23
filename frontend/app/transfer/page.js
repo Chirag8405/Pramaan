@@ -1323,20 +1323,34 @@ export default function TransferPage() {
             )}
 
             {escrowStep === 2 && (
-              <div className="flex flex-wrap gap-2">
-                <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onApproveTokenForEscrow} variant="secondary" className="w-fit">
-                  {escrowLoading ? "Working..." : "Approve Token"}
-                </Button>
-                <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onMarkShipped} variant="secondary" className="w-fit">
-                  {escrowLoading ? "Working..." : "Mark Shipped"}
-                </Button>
-              </div>
+              connectedRole === "seller" ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onApproveTokenForEscrow} variant="secondary" className="w-fit">
+                    {escrowLoading ? "Working..." : "Approve Token"}
+                  </Button>
+                  <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onMarkShipped} variant="secondary" className="w-fit">
+                    {escrowLoading ? "Working..." : "Mark Shipped"}
+                  </Button>
+                </div>
+              ) : (
+                <p className="m-0 text-[#aebbb5]">
+                  Waiting for the seller wallet ({truncateAddress(escrowData?.seller)}) to approve the token and mark it shipped.
+                  {connectedRole === "buyer" && " Switch to the seller wallet to continue, or share this escrow ID with the seller."}
+                </p>
+              )
             )}
 
             {escrowStep === 3 && (
-              <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onConfirmEscrow} variant="secondary" className="w-fit">
-                {escrowLoading ? "Working..." : "Confirm Received"}
-              </Button>
+              connectedRole === "buyer" ? (
+                <Button suppressHydrationWarning type="button" disabled={escrowLoading || !escrowId} onClick={onConfirmEscrow} variant="secondary" className="w-fit">
+                  {escrowLoading ? "Working..." : "Confirm Received"}
+                </Button>
+              ) : (
+                <p className="m-0 text-[#aebbb5]">
+                  Waiting for the buyer wallet ({truncateAddress(escrowData?.buyer)}) to confirm receipt.
+                  {connectedRole === "seller" && " Switch to the buyer wallet to confirm, once the item has arrived."}
+                </p>
+              )
             )}
 
             {escrowStep >= 4 && (
