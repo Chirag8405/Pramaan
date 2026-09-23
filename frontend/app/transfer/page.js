@@ -1440,14 +1440,16 @@ export default function TransferPage() {
           </CardHeader>
           <CardContent className="grid gap-3">
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={safetyActionLoading}
-                onClick={onCancelExpired}
-              >
-                {safetyActionLoading ? "Working..." : "Cancel Expired (buyer, past shipping deadline)"}
-              </Button>
+              {connectedRole === "buyer" && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={safetyActionLoading}
+                  onClick={onCancelExpired}
+                >
+                  {safetyActionLoading ? "Working..." : "Cancel Expired (buyer, past shipping deadline)"}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="secondary"
@@ -1458,23 +1460,31 @@ export default function TransferPage() {
               </Button>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-              <Input
-                suppressHydrationWarning
-                value={disputeReason}
-                onChange={(e) => setDisputeReason(e.target.value)}
-                placeholder="Reason for dispute"
-              />
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={safetyActionLoading}
-                onClick={onRaiseDispute}
-                className="w-fit"
-              >
-                {safetyActionLoading ? "Working..." : "Raise Dispute (buyer or seller)"}
-              </Button>
-            </div>
+            {(connectedRole === "buyer" || connectedRole === "seller") && (
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                <Input
+                  suppressHydrationWarning
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  placeholder="Reason for dispute"
+                />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={safetyActionLoading}
+                  onClick={onRaiseDispute}
+                  className="w-fit"
+                >
+                  {safetyActionLoading ? "Working..." : "Raise Dispute (buyer or seller)"}
+                </Button>
+              </div>
+            )}
+
+            {connectedRole === "viewer" && (
+              <p className="m-0 text-sm text-[#aebbb5]">
+                Connect as the buyer or seller wallet for this escrow to use Cancel Expired or Raise Dispute.
+              </p>
+            )}
 
             {safetyActionStatus && <p className="m-0 text-[#aebbb5]">{safetyActionStatus}</p>}
           </CardContent>
