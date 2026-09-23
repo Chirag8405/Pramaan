@@ -9,6 +9,8 @@ export default function EvidencePage() {
   const [evidence, setEvidence] = useState({ network: "sepolia", generatedAt: "", entries: [] });
   const [status, setStatus] = useState("");
 
+  // PHASE 6 · STEP 6 — reads back whatever appendEvidenceEntry (Step 5) has
+  // accumulated in this browser's localStorage and renders/exports it.
   function refresh() {
     setEvidence(loadEvidence());
   }

@@ -107,6 +107,10 @@ export default function MonitorPage() {
   const unsubRef = useRef([]);
   const eventIdsRef = useRef(new Set());
 
+  // PHASE 6 · STEP 1 — two separate viem clients for two separate jobs: wsClient
+  // stays open over a WebSocket for live, real-time event push notifications;
+  // httpClient does one-off request/response reads (used below to backfill recent
+  // history and to fetch each event's block timestamp).
   const wsClient = useMemo(() => {
     return createPublicClient({
       chain: sepolia,
@@ -159,6 +163,9 @@ export default function MonitorPage() {
         };
       };
 
+      // PHASE 6 · STEP 2 — before watching for NEW events, backfill the last
+      // ~25,000 blocks of history so the page isn't empty on load for events that
+      // already happened. One-off getLogs calls via httpClient, not the live socket.
       const backfillLogs = async ({ address, abi, eventName, mapLog }) => {
         const latestBlock = await httpClient.getBlockNumber();
         const fromBlock = latestBlock > HISTORY_BLOCK_SPAN ? latestBlock - HISTORY_BLOCK_SPAN : 0n;
@@ -243,6 +250,11 @@ export default function MonitorPage() {
             })
           });
 
+          // PHASE 6 · STEP 3 — attach a live WebSocket watcher for each event type,
+          // across all four contracts (this same watchContractEvent pattern repeats
+          // below for ProductNFT, EscrowMarketplace, and DynamicRoyalty). Once
+          // attached, new on-chain events push into the feed the moment they're
+          // mined -- no polling, no manual refresh.
           const unwatchRegistered = wsClient.watchContractEvent({
             address: PRODUCT_REGISTRY_ADDRESS,
             abi: PRODUCT_ABI,
@@ -611,6 +623,9 @@ export default function MonitorPage() {
           </Card>
         )}
 
+        {/* PHASE 6 · STEP 4 — the payoff: a live-updating feed, deduplicated by
+            pushEvent's id check above (a backfilled event and its later live-watched
+            duplicate share the same id, so it only ever renders once). */}
         {events.map((event) => (
           <Card key={event.id}>
             <CardContent className="grid gap-1.5 pt-6">

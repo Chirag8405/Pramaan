@@ -25,6 +25,10 @@ export function loadEvidence() {
   }
 }
 
+// PHASE 6 · STEP 5 — called from other pages (verify/page.js's nonce checkpoint,
+// transfer/page.js's transfer confirmation) right after a real on-chain action
+// succeeds, to build up a local trail as you actually use the app. Purely a
+// browser-storage convenience -- not shared, not synced, not on-chain itself.
 export function appendEvidenceEntry(entry) {
   if (typeof window === "undefined") {
     return;
@@ -48,6 +52,8 @@ export function clearEvidence() {
   window.localStorage.removeItem(STORAGE_KEY);
 }
 
+// PHASE 6 · STEP 6 (implementation) — turns the accumulated local trail into a
+// shareable Markdown document, used by the /evidence page's "Copy Markdown" button.
 export function toMarkdown(evidence) {
   const lines = [];
   lines.push("# Pramaan Demo Evidence");
