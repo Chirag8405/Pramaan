@@ -6,7 +6,7 @@ const checklistItems = [
   { label: "Artisan Flow", href: "/artisan" },
   { label: "Register Product", href: "/register-product" },
   { label: "Transfer", href: "/transfer" },
-  { label: "Retailer Verify", href: "/retailer-verify", note: "Generate a signed demo QR and scan it at counter." },
+  { label: "Retailer Verify", href: "/retailer-verify", note: "Register a product to get its QR, or view an existing product's QR after a completed transfer, then scan it on Retailer Verify." },
   { label: "Verify", href: "/verify", note: "Look up a product hash and see its trust trail." },
   {
     label: "Attack Demo: Nonce Replay",
