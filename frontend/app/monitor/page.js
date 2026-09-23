@@ -15,8 +15,6 @@ import {
   WS_RPC_URL
 } from "../../src/utils/constants";
 
-const HISTORY_BLOCK_SPAN = 25000n;
-
 const ESCROW_EVENTS_ABI = [
   {
     anonymous: false,
@@ -109,8 +107,9 @@ export default function MonitorPage() {
 
   // PHASE 6 · STEP 1 — two separate viem clients for two separate jobs: wsClient
   // stays open over a WebSocket for live, real-time event push notifications;
-  // httpClient does one-off request/response reads (used below to backfill recent
-  // history and to fetch each event's block timestamp).
+  // httpClient does one-off request/response reads (used below only to fetch each
+  // live event's block timestamp -- no historical backfill, see the note on
+  // watchContractEvent below for why).
   const wsClient = useMemo(() => {
     return createPublicClient({
       chain: sepolia,
@@ -153,39 +152,56 @@ export default function MonitorPage() {
         });
       };
 
-      const withBlockTimestamp = async (log, payload) => {
-        const block = await httpClient.getBlock({ blockNumber: log.blockNumber });
-        return {
-          ...payload,
-          time: new Date(Number(block.timestamp) * 1000).toLocaleString(),
-          blockNumber: Number(log.blockNumber),
-          txHash: log.transactionHash
-        };
-      };
+      // Same retry-with-backoff shape as withRpcRetry in
+      // app/api/verify-aadhaar/route.js (attempts=3, backoffsMs=[300, 900]) --
+      // that function can't be imported here (it's a server-only route module,
+      // this is a client component), so this mirrors it locally rather than
+      // inventing a different strategy for the same class of problem.
+      //
+      // Why this is needed at all: wsClient (WebSocket, publicnode) and
+      // httpClient (HTTP, Alchemy) are two DIFFERENT RPC providers watching the
+      // same chain. A block freshly mined can be pushed by wsClient's live
+      // subscription a moment before httpClient's own provider has that exact
+      // block queryable yet -- observed directly as a genuine, if brief,
+      // BlockNotFoundError right at the moment of a fresh transaction.
+      function delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
 
-      // PHASE 6 · STEP 2 — before watching for NEW events, backfill the last
-      // ~25,000 blocks of history so the page isn't empty on load for events that
-      // already happened. One-off getLogs calls via httpClient, not the live socket.
-      const backfillLogs = async ({ address, abi, eventName, mapLog }) => {
-        const latestBlock = await httpClient.getBlockNumber();
-        const fromBlock = latestBlock > HISTORY_BLOCK_SPAN ? latestBlock - HISTORY_BLOCK_SPAN : 0n;
-        const eventDescriptor = abi.find((item) => item.type === "event" && item.name === eventName);
-
-        if (!eventDescriptor) {
-          return;
+      async function getBlockWithRetry(blockNumber, attempts = 3, backoffsMs = [300, 900]) {
+        let lastError;
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+          try {
+            return await httpClient.getBlock({ blockNumber });
+          } catch (error) {
+            lastError = error;
+            if (attempt < attempts - 1) {
+              await delay(backoffsMs[attempt] ?? backoffsMs[backoffsMs.length - 1]);
+            }
+          }
         }
+        throw lastError;
+      }
 
-        const logs = await httpClient.getLogs({
-          address,
-          event: eventDescriptor,
-          fromBlock,
-          toBlock: "latest"
-        });
-
-        for (const log of logs) {
-          const payload = mapLog(log);
-          const item = await withBlockTimestamp(log, payload);
-          pushEvent(item);
+      const withBlockTimestamp = async (log, payload) => {
+        // Fallback if the block is still somehow unavailable after all retries:
+        // show the event now, with an honest "time unknown" label, rather than
+        // letting one problematic block crash the whole live feed.
+        try {
+          const block = await getBlockWithRetry(log.blockNumber);
+          return {
+            ...payload,
+            time: new Date(Number(block.timestamp) * 1000).toLocaleString(),
+            blockNumber: Number(log.blockNumber),
+            txHash: log.transactionHash
+          };
+        } catch (_error) {
+          return {
+            ...payload,
+            time: "Time unknown (block not yet available from this RPC)",
+            blockNumber: Number(log.blockNumber),
+            txHash: log.transactionHash
+          };
         }
       };
 
@@ -193,68 +209,18 @@ export default function MonitorPage() {
         const activeFeeds = [];
         const unwatchFns = [];
 
+        // PHASE 6 · STEP 2 — attach a live WebSocket watcher for each event type,
+        // across all four contracts (this same watchContractEvent pattern repeats
+        // below for ProductNFT, EscrowMarketplace, and DynamicRoyalty). New on-chain
+        // events push into the feed the moment they're mined -- no polling, no
+        // manual refresh. Deliberately no historical backfill here: this RPC's free
+        // tier caps eth_getLogs at a 10-block range, which is functionally useless
+        // for scanning any meaningful window of history, so this page only ever
+        // shows events from the moment it's opened onward (see the note in the UI).
         if (hasProductFeed) {
-          await backfillLogs({
-            address: PRODUCT_REGISTRY_ADDRESS,
-            abi: PRODUCT_ABI,
-            eventName: "ProductRegistered",
-            mapLog: (log) => ({
-              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":reg",
-              type: "ProductRegistered",
-              source: "ProductRegistry",
-              hash: log.args.productHash
-            })
-          });
+          const eventNameToErrorLabel = (eventName) =>
+            "Live event stream error for ProductRegistry." + eventName + ". Check the WebSocket endpoint.";
 
-          await backfillLogs({
-            address: PRODUCT_REGISTRY_ADDRESS,
-            abi: PRODUCT_ABI,
-            eventName: "ProductProvenanceSigned",
-            mapLog: (log) => ({
-              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":prov",
-              type: "ProductProvenanceSigned",
-              source: "ProductRegistry",
-              hash: log.args.productHash,
-              metadataHash: log.args.metadataHash,
-              signer: log.args.signer
-            })
-          });
-
-          await backfillLogs({
-            address: PRODUCT_REGISTRY_ADDRESS,
-            abi: PRODUCT_ABI,
-            eventName: "ProductTransferred",
-            mapLog: (log) => ({
-              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":xfer",
-              type: "ProductTransferred",
-              source: "ProductRegistry",
-              hash: log.args.productHash,
-              from: log.args.from,
-              to: log.args.to,
-              count: Number(log.args.transferCount)
-            })
-          });
-
-          await backfillLogs({
-            address: PRODUCT_REGISTRY_ADDRESS,
-            abi: PRODUCT_ABI,
-            eventName: "ProductScanCheckpoint",
-            mapLog: (log) => ({
-              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":scan",
-              type: "ProductScanCheckpoint",
-              source: "ProductRegistry",
-              hash: log.args.productHash,
-              nonce: log.args.nonce,
-              scanner: log.args.scanner,
-              replayed: Boolean(log.args.replayed)
-            })
-          });
-
-          // PHASE 6 · STEP 3 — attach a live WebSocket watcher for each event type,
-          // across all four contracts (this same watchContractEvent pattern repeats
-          // below for ProductNFT, EscrowMarketplace, and DynamicRoyalty). Once
-          // attached, new on-chain events push into the feed the moment they're
-          // mined -- no polling, no manual refresh.
           const unwatchRegistered = wsClient.watchContractEvent({
             address: PRODUCT_REGISTRY_ADDRESS,
             abi: PRODUCT_ABI,
@@ -271,7 +237,7 @@ export default function MonitorPage() {
               }
             },
             onError: () => {
-              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+              setStatus(eventNameToErrorLabel("ProductRegistered"));
             }
           });
 
@@ -294,7 +260,7 @@ export default function MonitorPage() {
               }
             },
             onError: () => {
-              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+              setStatus(eventNameToErrorLabel("ProductTransferred"));
             }
           });
 
@@ -316,7 +282,7 @@ export default function MonitorPage() {
               }
             },
             onError: () => {
-              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+              setStatus(eventNameToErrorLabel("ProductProvenanceSigned"));
             }
           });
 
@@ -339,7 +305,7 @@ export default function MonitorPage() {
               }
             },
             onError: () => {
-              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+              setStatus(eventNameToErrorLabel("ProductScanCheckpoint"));
             }
           });
 
@@ -348,20 +314,6 @@ export default function MonitorPage() {
         }
 
         if (hasNftFeed) {
-          await backfillLogs({
-            address: PRODUCT_NFT_ADDRESS,
-            abi: PRODUCT_NFT_ABI,
-            eventName: "ProductMinted",
-            mapLog: (log) => ({
-              id: String(log.transactionHash) + ":" + String(log.logIndex) + ":mint",
-              type: "ProductMinted",
-              source: "ProductNFT",
-              tokenId: Number(log.args.tokenId),
-              artisan: log.args.artisan,
-              to: log.args.recipient
-            })
-          });
-
           const unwatchMinted = wsClient.watchContractEvent({
             address: PRODUCT_NFT_ADDRESS,
             abi: PRODUCT_NFT_ABI,
@@ -380,7 +332,7 @@ export default function MonitorPage() {
               }
             },
             onError: () => {
-              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+              setStatus("Live event stream error for ProductNFT.ProductMinted. Check the WebSocket endpoint.");
             }
           });
 
@@ -398,63 +350,55 @@ export default function MonitorPage() {
             "EscrowResolved"
           ];
 
-          for (const eventName of escrowEventNames) {
-            await backfillLogs({
-              address: ESCROW_MARKETPLACE_ADDRESS,
-              abi: ESCROW_EVENTS_ABI,
-              eventName,
-              mapLog: (log) => {
-                const args = log.args || {};
-                const base = {
-                  id: String(log.transactionHash) + ":" + String(log.logIndex) + ":" + eventName,
-                  type: eventName,
-                  source: "EscrowMarketplace"
-                };
+          const mapEscrowLog = (eventName, args) => {
+            const base = {
+              id: "",
+              type: eventName,
+              source: "EscrowMarketplace"
+            };
 
-                if (eventName === "EscrowCreated") {
-                  Object.assign(base, {
-                    escrowId: Number(args.escrowId),
-                    tokenId: Number(args.tokenId),
-                    buyer: args.buyer,
-                    seller: args.seller,
-                    salePriceEth: formatEther(args.salePrice || 0n)
-                  });
-                } else if (eventName === "EscrowShipped") {
-                  Object.assign(base, {
-                    escrowId: Number(args.escrowId),
-                    confirmDeadline: Number(args.confirmDeadline)
-                  });
-                } else if (eventName === "EscrowCompleted") {
-                  Object.assign(base, {
-                    escrowId: Number(args.escrowId),
-                    tokenId: Number(args.tokenId),
-                    artisanAmountEth: formatEther(args.artisanAmount || 0n),
-                    sellerAmountEth: formatEther(args.sellerAmount || 0n)
-                  });
-                } else if (eventName === "EscrowRefunded") {
-                  Object.assign(base, {
-                    escrowId: Number(args.escrowId),
-                    buyer: args.buyer,
-                    refundEth: formatEther(args.amount || 0n)
-                  });
-                } else if (eventName === "EscrowDisputed") {
-                  Object.assign(base, {
-                    escrowId: Number(args.escrowId),
-                    raisedBy: args.raisedBy,
-                    reason: args.reason
-                  });
-                } else if (eventName === "EscrowResolved") {
-                  Object.assign(base, {
-                    escrowId: Number(args.escrowId),
-                    sellerWins: Boolean(args.sellerWins),
-                    resolution: args.resolution
-                  });
-                }
+            if (eventName === "EscrowCreated") {
+              Object.assign(base, {
+                escrowId: Number(args.escrowId),
+                tokenId: Number(args.tokenId),
+                buyer: args.buyer,
+                seller: args.seller,
+                salePriceEth: formatEther(args.salePrice || 0n)
+              });
+            } else if (eventName === "EscrowShipped") {
+              Object.assign(base, {
+                escrowId: Number(args.escrowId),
+                confirmDeadline: Number(args.confirmDeadline)
+              });
+            } else if (eventName === "EscrowCompleted") {
+              Object.assign(base, {
+                escrowId: Number(args.escrowId),
+                tokenId: Number(args.tokenId),
+                artisanAmountEth: formatEther(args.artisanAmount || 0n),
+                sellerAmountEth: formatEther(args.sellerAmount || 0n)
+              });
+            } else if (eventName === "EscrowRefunded") {
+              Object.assign(base, {
+                escrowId: Number(args.escrowId),
+                buyer: args.buyer,
+                refundEth: formatEther(args.amount || 0n)
+              });
+            } else if (eventName === "EscrowDisputed") {
+              Object.assign(base, {
+                escrowId: Number(args.escrowId),
+                raisedBy: args.raisedBy,
+                reason: args.reason
+              });
+            } else if (eventName === "EscrowResolved") {
+              Object.assign(base, {
+                escrowId: Number(args.escrowId),
+                sellerWins: Boolean(args.sellerWins),
+                resolution: args.resolution
+              });
+            }
 
-                return base;
-              }
-            });
-          }
+            return base;
+          };
 
           for (const eventName of escrowEventNames) {
             const unwatchEscrowEvent = wsClient.watchContractEvent({
@@ -464,58 +408,14 @@ export default function MonitorPage() {
               onLogs: async (logs) => {
                 for (const log of logs) {
                   const args = log.args || {};
-                  const base = {
-                    id: String(log.transactionHash) + ":" + String(log.logIndex) + ":" + eventName,
-                    type: eventName,
-                    source: "EscrowMarketplace"
-                  };
-
-                  if (eventName === "EscrowCreated") {
-                    Object.assign(base, {
-                      escrowId: Number(args.escrowId),
-                      tokenId: Number(args.tokenId),
-                      buyer: args.buyer,
-                      seller: args.seller,
-                      salePriceEth: formatEther(args.salePrice || 0n)
-                    });
-                  } else if (eventName === "EscrowShipped") {
-                    Object.assign(base, {
-                      escrowId: Number(args.escrowId),
-                      confirmDeadline: Number(args.confirmDeadline)
-                    });
-                  } else if (eventName === "EscrowCompleted") {
-                    Object.assign(base, {
-                      escrowId: Number(args.escrowId),
-                      tokenId: Number(args.tokenId),
-                      artisanAmountEth: formatEther(args.artisanAmount || 0n),
-                      sellerAmountEth: formatEther(args.sellerAmount || 0n)
-                    });
-                  } else if (eventName === "EscrowRefunded") {
-                    Object.assign(base, {
-                      escrowId: Number(args.escrowId),
-                      buyer: args.buyer,
-                      refundEth: formatEther(args.amount || 0n)
-                    });
-                  } else if (eventName === "EscrowDisputed") {
-                    Object.assign(base, {
-                      escrowId: Number(args.escrowId),
-                      raisedBy: args.raisedBy,
-                      reason: args.reason
-                    });
-                  } else if (eventName === "EscrowResolved") {
-                    Object.assign(base, {
-                      escrowId: Number(args.escrowId),
-                      sellerWins: Boolean(args.sellerWins),
-                      resolution: args.resolution
-                    });
-                  }
-
+                  const base = mapEscrowLog(eventName, args);
+                  base.id = String(log.transactionHash) + ":" + String(log.logIndex) + ":" + eventName;
                   const item = await withBlockTimestamp(log, base);
                   pushEvent(item);
                 }
               },
               onError: () => {
-                setStatus("Live stream error. Check WS endpoint or contract addresses.");
+                setStatus("Live event stream error for EscrowMarketplace." + eventName + ". Check the WebSocket endpoint.");
               }
             });
 
@@ -526,27 +426,6 @@ export default function MonitorPage() {
         }
 
         if (hasRoyaltyFeed) {
-          await backfillLogs({
-            address: DYNAMIC_ROYALTY_ADDRESS,
-            abi: ROYALTY_EVENTS_ABI,
-            eventName: "RoyaltySettled",
-            mapLog: (log) => {
-              const args = log.args || {};
-              return {
-                id: String(log.transactionHash) + ":" + String(log.logIndex) + ":RoyaltySettled",
-                type: "RoyaltySettled",
-                source: "DynamicRoyalty",
-                tokenId: Number(args.tokenId),
-                transferId: Number(args.transferId),
-                seller: args.seller,
-                artisan: args.artisan,
-                salePriceEth: formatEther(args.salePrice || 0n),
-                artisanAmountEth: formatEther(args.artisanAmount || 0n),
-                sellerAmountEth: formatEther(args.sellerAmount || 0n)
-              };
-            }
-          });
-
           const unwatchRoyalty = wsClient.watchContractEvent({
             address: DYNAMIC_ROYALTY_ADDRESS,
             abi: ROYALTY_EVENTS_ABI,
@@ -570,7 +449,7 @@ export default function MonitorPage() {
               }
             },
             onError: () => {
-              setStatus("Live stream error. Check WS endpoint or contract addresses.");
+              setStatus("Live event stream error for DynamicRoyalty.RoyaltySettled. Check the WebSocket endpoint.");
             }
           });
 
@@ -581,8 +460,8 @@ export default function MonitorPage() {
         unsubRef.current = unwatchFns;
         setFeeds(activeFeeds);
         setStatus("Live stream connected.");
-      } catch (_error) {
-        setStatus("Could not connect to websocket stream.");
+      } catch (error) {
+        setStatus("Could not attach live event watchers: " + (error?.shortMessage || error?.message || "unknown error") + ".");
       }
     }
 
@@ -608,6 +487,9 @@ export default function MonitorPage() {
         <p className="m-0 text-[#aebbb5]">
           Unified realtime lifecycle stream for registration, transfer, escrow, disputes, and settlement.
         </p>
+        <p className="m-0 text-sm text-[#8a9891]">
+          Showing events from now onward -- historical backfill isn&apos;t available on this RPC tier.
+        </p>
         <p className="m-0 font-bold text-[#aebbb5]">{status}</p>
         {feeds.length > 0 && (
           <p className="m-0 text-[#8a9891]">Active feeds: {feeds.join(", ")}</p>
@@ -623,9 +505,8 @@ export default function MonitorPage() {
           </Card>
         )}
 
-        {/* PHASE 6 · STEP 4 — the payoff: a live-updating feed, deduplicated by
-            pushEvent's id check above (a backfilled event and its later live-watched
-            duplicate share the same id, so it only ever renders once). */}
+        {/* PHASE 6 · STEP 3 — the payoff: a live-updating feed, deduplicated by
+            pushEvent's id check above. */}
         {events.map((event) => (
           <Card key={event.id}>
             <CardContent className="grid gap-1.5 pt-6">
