@@ -1045,10 +1045,20 @@ export default function TransferPage() {
       }
 
       setEscrowStatusText("Confirming delivery and releasing escrow funds...");
-      await confirmEscrowReceived(Number(escrowId));
+      const confirmReceipt = await confirmEscrowReceived(Number(escrowId));
       await loadEscrow(escrowId);
       setEscrowStep(4);
       setEscrowStatusText("Escrow completed. Funds settled and NFT transferred.");
+
+      const confirmTxHash = confirmReceipt?.transactionHash || confirmReceipt?.hash || "";
+      if (confirmTxHash) {
+        appendEvidenceEntry({
+          action: "Escrow Completed",
+          productHash: hash.trim(),
+          txUrl: "https://sepolia.etherscan.io/tx/" + confirmTxHash,
+          notes: "Escrow #" + escrowId + " confirmed by buyer, funds released to seller/artisan."
+        });
+      }
       if (preSettlementPreview) {
         setCompletionPreview(preSettlementPreview);
         setCompletionPreviewError("");
