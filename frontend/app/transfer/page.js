@@ -9,6 +9,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import TerritorScore from "../../components/TerritorScore";
+import ProductQrCode from "../../components/ProductQrCode";
 import {
   approveEscrowForToken,
   confirmEscrowReceived,
@@ -476,8 +477,7 @@ export default function TransferPage() {
       setTransferSuccess({
         txUrl: txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "",
         newTerroir: refreshed.terroir,
-        artisanPaymentEth: artisanPayment.toFixed(6),
-        retailerQrUrl: "/retailer-verify?productHash=" + encodeURIComponent(hash.trim())
+        artisanPaymentEth: artisanPayment.toFixed(6)
       });
       setStatus("Transfer completed successfully.");
     } catch (error) {
@@ -1276,6 +1276,17 @@ export default function TransferPage() {
                     </CardContent>
                   </Card>
                 )}
+                <Card className="border-[#1f4a38] bg-[#0f2e22]">
+                  <CardHeader className="pb-2">
+                    <CardTitle>Product QR for New Owner</CardTitle>
+                    <CardDescription>
+                      Scan this to verify the product's updated provenance record after this transfer.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ProductQrCode productHash={hash} />
+                  </CardContent>
+                </Card>
               </>
             )}
 
@@ -1477,11 +1488,6 @@ export default function TransferPage() {
               <CardContent className="grid gap-2 text-[#aebbb5]">
                 <p className="m-0">New Terroir Score: {transferSuccess.newTerroir}</p>
                 <p className="m-0">Artisan payment: {transferSuccess.artisanPaymentEth} ETH</p>
-                {transferSuccess.retailerQrUrl && (
-                  <Link href={transferSuccess.retailerQrUrl} className="w-fit no-underline">
-                    <Button type="button" variant="secondary">Generate Retailer QR</Button>
-                  </Link>
-                )}
                 {transferSuccess.txUrl && (
                   <p className="m-0">
                     Etherscan:{" "}

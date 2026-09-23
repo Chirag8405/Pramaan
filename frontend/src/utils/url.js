@@ -21,3 +21,9 @@ export function getShareBaseUrl() {
 
   return "";
 }
+
+// Builds the absolute /verify URL for a given product hash, suitable for
+// encoding into a QR code that must be scannable by a plain phone camera app.
+export function buildVerifyUrl(productHash) {
+  return getShareBaseUrl() + "/verify?hash=" + encodeURIComponent(String(productHash || "").trim());
+}
