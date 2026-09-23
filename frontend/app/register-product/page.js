@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { QRCodeSVG } from "qrcode.react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import ProductQrCode from "../../components/ProductQrCode";
 import TerritorScore from "../../components/TerritorScore";
 import { giRegions } from "../../src/utils/craftDetector";
 import {
@@ -22,7 +22,6 @@ import {
 } from "../../src/utils/contract";
 import { hashProduct } from "../../src/utils/hash";
 import { getIPFSUrl, uploadToIPFS } from "../../src/utils/ipfs";
-import { getShareBaseUrl } from "../../src/utils/url";
 
 function sanitizeHexBytes(value) {
   const text = String(value || "").trim();
@@ -424,11 +423,6 @@ export default function RegisterProductPage() {
         "/transfer?hash=" +
         productHash +
         (mintedTokenId ? "&tokenId=" + encodeURIComponent(mintedTokenId) : "");
-      // PHASE 2 · STEP 7 — build the shareable verify link and QR code (rendered
-      // below in the success card). Absolute, not relative: a phone scanning the
-      // code is a different device than the one that registered the product, so
-      // "/verify?hash=..." alone would have nothing to resolve against.
-      const verifyUrlAbsolute = getShareBaseUrl() + verifyUrl;
 
       setSuccess({
         productHash,
@@ -444,7 +438,6 @@ export default function RegisterProductPage() {
         txUrl: txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "",
         mintTxUrl: mintTxHash ? "https://sepolia.etherscan.io/tx/" + mintTxHash : "",
         verifyUrl,
-        verifyUrlAbsolute,
         transferUrl
       });
 
@@ -747,17 +740,7 @@ export default function RegisterProductPage() {
               </Link>
             </div>
 
-            <div className="grid gap-2 rounded-xl border border-[#26312b] bg-[#131917] p-3" style={{ width: "fit-content" }}>
-              <p className="m-0 text-xs font-semibold uppercase tracking-wide text-[#8a9891]">
-                Scan to Verify (Retailer QR)
-              </p>
-              <div className="rounded-lg bg-white p-3" style={{ width: "fit-content" }}>
-                <QRCodeSVG value={success.verifyUrlAbsolute} size={180} />
-              </div>
-              <p className="m-0 max-w-[220px] break-all font-mono text-[10px] text-[#8a9891]">
-                {success.verifyUrlAbsolute}
-              </p>
-            </div>
+            <ProductQrCode productHash={success.productHash} />
 
             <div style={{ maxWidth: 340 }}>
               <TerritorScore score={success.mintedTerroirScore} />
