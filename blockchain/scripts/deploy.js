@@ -58,6 +58,16 @@ async function main() {
     const productRegistryAddress = await productRegistry.getAddress();
     const productDeployTxHash = productRegistry.deploymentTransaction()?.hash || "";
 
+    // Wire ProductRegistry <-> EscrowMarketplace so a settled escrow's custody-chain
+    // update (recordEscrowTransfer) actually reaches ProductRegistry, keeping
+    // /verify's Custody History and terroir score in sync with real NFT transfers
+    // that happen through the escrow flow (previously only the old, now-hidden
+    // direct-transfer path updated ProductRegistry at all).
+    const setEscrowMarketplaceTx = await productRegistry.setEscrowMarketplace(escrowMarketplaceAddress);
+    await setEscrowMarketplaceTx.wait();
+    const setProductRegistryTx = await escrowMarketplace.setProductRegistry(productRegistryAddress);
+    await setProductRegistryTx.wait();
+
     console.log("ArtisanRegistry deployed at:", artisanRegistryAddress);
     console.log("DynamicRoyalty deployed at:", dynamicRoyaltyAddress);
     console.log("ProductNFT deployed at:", productNFTAddress);

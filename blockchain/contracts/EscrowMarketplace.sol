@@ -14,6 +14,10 @@ interface IDynamicRoyaltyEscrow {
         returns (uint256 artisanAmount, uint256 sellerAmount);
 }
 
+interface IProductRegistryEscrow {
+    function recordEscrowTransfer(bytes32 hash, address newOwner) external;
+}
+
 /// @title EscrowMarketplace
 /// @notice Holds buyer payment in escrow and releases it after delivery confirmation.
 contract EscrowMarketplace is Ownable, ReentrancyGuard {
@@ -30,6 +34,7 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
     struct Escrow {
         uint256 id;
         uint256 tokenId;
+        bytes32 productHash;
         address buyer;
         address seller;
         uint256 salePrice;
@@ -43,6 +48,12 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
 
     IERC721 public immutable productNft;
     IDynamicRoyaltyEscrow public immutable royaltyEngine;
+    // Not immutable, unlike the two above -- ProductRegistry is deployed and wired
+    // up via setProductRegistry after this contract exists (mirrors
+    // DynamicRoyalty.setMarketplace's pattern), rather than passed into the
+    // constructor, so deployment order between this contract and ProductRegistry
+    // doesn't matter.
+    IProductRegistryEscrow public productRegistry;
 
     uint256 public immutable shippingWindowSec;
     uint256 public immutable confirmWindowSec;
@@ -68,6 +79,8 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
     event EscrowRefunded(uint256 indexed escrowId, address indexed buyer, uint256 amount);
     event EscrowDisputed(uint256 indexed escrowId, address indexed raisedBy, string reason);
     event EscrowResolved(uint256 indexed escrowId, bool sellerWins, string resolution);
+    event ProductRegistryUpdated(address indexed registry);
+    event ProductRegistrySyncFailed(uint256 indexed escrowId, bytes32 indexed productHash);
 
     constructor(
         address productNftAddress,
@@ -86,10 +99,27 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         confirmWindowSec = confirmWindowSeconds;
     }
 
+    /// @notice Wires up ProductRegistry so a settled escrow can sync its custody
+    /// chain. Optional: if never set (or set to the zero address), escrows still
+    /// settle normally -- only the ProductRegistry sync step is skipped.
+    function setProductRegistry(address registryAddress) external onlyOwner {
+        require(registryAddress != address(0), "Escrow: invalid product registry");
+        productRegistry = IProductRegistryEscrow(registryAddress);
+        emit ProductRegistryUpdated(registryAddress);
+    }
+
     // PHASE 5 · STEP 2 (on-chain) — locks msg.value in this contract; nothing is
     // paid to the seller yet. Requires the seller to genuinely own the token right
     // now and that it's a real, royalty-registered product, not arbitrary NFT junk.
-    function createEscrow(uint256 tokenId, address seller) external payable nonReentrant returns (uint256 escrowId) {
+    // productHash is optional (pass bytes32(0) if this token isn't tied to a
+    // ProductRegistry record) -- it's only used, on settlement, to sync that
+    // registry's custody chain; it never gates escrow creation itself.
+    function createEscrow(uint256 tokenId, address seller, bytes32 productHash)
+        external
+        payable
+        nonReentrant
+        returns (uint256 escrowId)
+    {
         require(msg.value > 0, "Escrow: sale price is zero");
         require(seller != address(0), "Escrow: invalid seller");
         require(seller != msg.sender, "Escrow: buyer and seller cannot match");
@@ -101,6 +131,7 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         escrows[escrowId] = Escrow({
             id: escrowId,
             tokenId: tokenId,
+            productHash: productHash,
             buyer: msg.sender,
             seller: seller,
             salePrice: msg.value,
@@ -241,6 +272,18 @@ contract EscrowMarketplace is Ownable, ReentrancyGuard {
         );
 
         productNft.safeTransferFrom(escrow.seller, escrow.buyer, escrow.tokenId);
+
+        // Best-effort ProductRegistry custody-chain sync: wrapped in try/catch so a
+        // registry-side failure (not wired up, hash not registered there, etc.)
+        // never blocks or reverts an otherwise-successful settlement -- the funds
+        // and NFT have already moved by this point and that must stand regardless.
+        if (escrow.productHash != bytes32(0) && address(productRegistry) != address(0)) {
+            try productRegistry.recordEscrowTransfer(escrow.productHash, escrow.buyer) {
+                // no-op on success
+            } catch {
+                emit ProductRegistrySyncFailed(escrow.id, escrow.productHash);
+            }
+        }
 
         emit EscrowCompleted(escrow.id, escrow.tokenId, artisanAmount, sellerAmount);
     }

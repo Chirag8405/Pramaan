@@ -978,15 +978,24 @@ export async function approveEscrowForToken(tokenId) {
 // PHASE 5 · STEP 2 (implementation) — sends real ETH as `value`, locked into the
 // EscrowMarketplace contract. Reads back escrowCount() afterward since
 // createEscrow's return value isn't otherwise surfaced by a plain transaction call.
-export async function createEscrowSale(tokenId, sellerAddress, saleValueEth) {
+// productHash is optional -- pass "" / null if this token isn't tied to a
+// ProductRegistry record. When present, it's what lets EscrowMarketplace sync
+// ProductRegistry's custody chain (handlers[]/transferCount, what /verify's
+// Custody History and terroir score read) once this escrow settles; omitting
+// it just means that sync step is skipped, escrow itself still works the same.
+export async function createEscrowSale(tokenId, sellerAddress, saleValueEth, productHash) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();
+
+    const normalizedProductHash = /^0x[0-9a-fA-F]{64}$/.test(String(productHash || "").trim())
+        ? String(productHash).trim()
+        : ZERO_HASH;
 
     const txHash = await writeWithEstimatedGas({
         address: ESCROW_MARKETPLACE_ADDRESS,
         abi: ESCROW_MARKETPLACE_ABI,
         functionName: "createEscrow",
-        args: [BigInt(tokenId), sellerAddress],
+        args: [BigInt(tokenId), sellerAddress, normalizedProductHash],
         value: parseEther(String(saleValueEth))
     });
 
@@ -1090,6 +1099,7 @@ export async function getEscrowDetails(escrowId) {
     const [
         id,
         tokenId,
+        productHash,
         buyer,
         seller,
         salePrice,
@@ -1109,6 +1119,7 @@ export async function getEscrowDetails(escrowId) {
     return {
         id: Number(id),
         tokenId: Number(tokenId),
+        productHash,
         buyer,
         seller,
         salePriceWei: salePrice,
