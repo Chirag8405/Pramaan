@@ -74,10 +74,40 @@ export default function ArtisanPage() {
     setHydrated(true);
   }, []);
 
+  // PHASE 1 · STEP 8 — isVerifiedArtisan() is the combined gate: true only once
+  // BOTH registration (step 7) and Aadhaar verification (steps 2-6) have
+  // completed. Shared by the passive on-load check and the explicit Connect
+  // Wallet click below, so an already-verified artisan is recognized either
+  // way, not just when the wallet was pre-authorized from a prior session.
+  async function checkAlreadyVerified(address, { isActive } = {}) {
+    try {
+      const [artisanRecord, verified] = await Promise.all([
+        getArtisan(address),
+        isVerifiedArtisan(address)
+      ]);
+
+      if (isActive && !isActive()) {
+        return;
+      }
+
+      const isRegistered = Number(artisanRecord?.registeredAt || 0) > 0;
+      setIsArtisanRegistered(isRegistered);
+      if (isRegistered && Boolean(verified)) {
+        setAlreadyVerified(true);
+        setMessage("Already a verified artisan on this wallet. Redirecting to product registration...");
+        setTimeout(() => {
+          router.push("/register-product");
+        }, 1200);
+      }
+    } catch (_error) {
+      // Non-blocking: keep manual flow available if the read fails.
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
-    async function checkIfAlreadyVerified() {
+    async function checkOnLoad() {
       if (!hydrated) {
         return;
       }
@@ -91,35 +121,10 @@ export default function ArtisanPage() {
       }
 
       setWallet(existing);
-
-      try {
-        // PHASE 1 · STEP 8 — isVerifiedArtisan() is the combined gate: true only once
-        // BOTH registration (step 7) and Aadhaar verification (steps 2-6) have
-        // completed. Checked here just to surface "already verified" on page load;
-        // every other page/contract that requires artisan status checks this same
-        // function independently.
-        const [artisanRecord, verified] = await Promise.all([
-          getArtisan(existing),
-          isVerifiedArtisan(existing)
-        ]);
-
-        if (!active) {
-          return;
-        }
-
-        const isRegistered = Number(artisanRecord?.registeredAt || 0) > 0;
-        setIsArtisanRegistered(isRegistered);
-        if (isRegistered && Boolean(verified)) {
-          // Surface it, but never navigate on the user's behalf — only an
-          // explicit click on the button below moves to Register Product.
-          setAlreadyVerified(true);
-        }
-      } catch (_error) {
-        // Non-blocking: keep manual flow available if the read fails.
-      }
+      await checkAlreadyVerified(existing, { isActive: () => active });
     }
 
-    void checkIfAlreadyVerified();
+    void checkOnLoad();
 
     return () => {
       active = false;
@@ -347,6 +352,7 @@ export default function ArtisanPage() {
       const result = await connectWallet();
       setWallet(result.address);
       setMessage("Wallet connected.");
+      await checkAlreadyVerified(result.address);
     } catch (error) {
       setMessage(error?.message || "Failed to connect wallet.");
     }
