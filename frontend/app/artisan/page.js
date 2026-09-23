@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { craftTypes, detectCraft, giRegions } from "../../src/utils/craftDetector";
+import { appendEvidenceEntry } from "../../src/utils/evidence";
 import { uploadToIPFS } from "../../src/utils/ipfs";
 import {
   connectWallet,
@@ -518,6 +519,14 @@ export default function ArtisanPage() {
       const tokenId = extractTokenIdFromReceipt(receipt);
       const txHash = receipt?.transactionHash || receipt?.hash || "";
       const txUrl = txHash ? "https://sepolia.etherscan.io/tx/" + txHash : "";
+
+      if (txHash) {
+        appendEvidenceEntry({
+          action: "Artisan Registered",
+          txUrl,
+          notes: form.name.trim() + " (" + form.craft.trim() + ", " + form.giRegion.trim() + ") -- soulbound identity token #" + tokenId
+        });
+      }
 
       setIsArtisanRegistered(true);
       setSuccess({
