@@ -1049,6 +1049,23 @@ export async function cancelEscrowExpired(escrowId) {
     return waitForTransactionReceipt(config, { hash: txHash });
 }
 
+// Permissionless "poke" -- anyone can call this, not just the buyer/seller, to
+// unstick an escrow whose deadline has passed. Genuinely optional; the happy path
+// (create -> approve -> ship -> confirm) never needs it.
+export async function checkEscrowExpiry(escrowId) {
+    assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
+    await connectWallet();
+
+    const txHash = await writeWithEstimatedGas({
+        address: ESCROW_MARKETPLACE_ADDRESS,
+        abi: ESCROW_MARKETPLACE_ABI,
+        functionName: "checkExpiry",
+        args: [BigInt(escrowId)]
+    });
+
+    return waitForTransactionReceipt(config, { hash: txHash });
+}
+
 export async function raiseEscrowDispute(escrowId, reason) {
     assertConfiguredAddress(ESCROW_MARKETPLACE_ADDRESS, "ESCROW_MARKETPLACE_ADDRESS");
     await connectWallet();

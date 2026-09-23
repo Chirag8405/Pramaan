@@ -11,6 +11,8 @@ import { Input } from "../../components/ui/input";
 import TerritorScore from "../../components/TerritorScore";
 import {
   approveEscrowForToken,
+  cancelEscrowExpired,
+  checkEscrowExpiry,
   confirmEscrowReceived,
   createEscrowSale,
   findLatestMintedTokenIdByRecipient,
@@ -21,6 +23,7 @@ import {
   markEscrowShipped,
   mintProductTwin,
   previewRoyaltySettlement,
+  raiseEscrowDispute,
   transferProduct,
   verifyProduct
 } from "../../src/utils/contract";
@@ -73,6 +76,13 @@ export default function TransferPage() {
 
   const [completionPreview, setCompletionPreview] = useState(null);
   const [completionPreviewError, setCompletionPreviewError] = useState("");
+
+  // Safety-valve escrow actions (cancel/dispute/check-expiry) -- separate loading
+  // flag and status text from the main escrow flow above, since these are optional
+  // side actions rather than steps in the happy path.
+  const [disputeReason, setDisputeReason] = useState("");
+  const [safetyActionLoading, setSafetyActionLoading] = useState(false);
+  const [safetyActionStatus, setSafetyActionStatus] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1056,6 +1066,74 @@ export default function TransferPage() {
     }
   }
 
+  // Safety-valve actions: none of these are part of the required happy path
+  // (create -> approve -> ship -> confirm above). Each maps directly to an
+  // EscrowMarketplace function that's been on-chain and callable all along --
+  // these buttons are the only thing that was missing.
+  async function onCancelExpired() {
+    if (!escrowId) {
+      setSafetyActionStatus("Load or create an escrow first.");
+      return;
+    }
+    setSafetyActionLoading(true);
+    setSafetyActionStatus("Cancelling expired escrow and refunding buyer...");
+    try {
+      const receipt = await cancelEscrowExpired(Number(escrowId));
+      await loadEscrow(escrowId);
+      const txHash = receipt?.transactionHash || receipt?.hash || "";
+      setSafetyActionStatus("Escrow cancelled and refunded." + (txHash ? " Tx: https://sepolia.etherscan.io/tx/" + txHash : ""));
+    } catch (error) {
+      const raw = extractReadableError(error, "Cancel failed.");
+      setSafetyActionStatus(mapEscrowError(raw, "Cancel failed -- this only works after the shipping deadline has passed, and only for the buyer."));
+    } finally {
+      setSafetyActionLoading(false);
+    }
+  }
+
+  async function onCheckExpiry() {
+    if (!escrowId) {
+      setSafetyActionStatus("Load or create an escrow first.");
+      return;
+    }
+    setSafetyActionLoading(true);
+    setSafetyActionStatus("Checking whether this escrow's deadline has passed...");
+    try {
+      const receipt = await checkEscrowExpiry(Number(escrowId));
+      await loadEscrow(escrowId);
+      const txHash = receipt?.transactionHash || receipt?.hash || "";
+      setSafetyActionStatus("Expiry checked -- escrow state updated if a deadline had passed." + (txHash ? " Tx: https://sepolia.etherscan.io/tx/" + txHash : ""));
+    } catch (error) {
+      const raw = extractReadableError(error, "Check expiry failed.");
+      setSafetyActionStatus(mapEscrowError(raw, "Check expiry failed -- this only does something once a deadline has actually passed."));
+    } finally {
+      setSafetyActionLoading(false);
+    }
+  }
+
+  async function onRaiseDispute() {
+    if (!escrowId) {
+      setSafetyActionStatus("Load or create an escrow first.");
+      return;
+    }
+    if (!disputeReason.trim()) {
+      setSafetyActionStatus("Enter a reason for the dispute.");
+      return;
+    }
+    setSafetyActionLoading(true);
+    setSafetyActionStatus("Raising dispute...");
+    try {
+      const receipt = await raiseEscrowDispute(Number(escrowId), disputeReason.trim());
+      await loadEscrow(escrowId);
+      const txHash = receipt?.transactionHash || receipt?.hash || "";
+      setSafetyActionStatus("Dispute raised. An admin must resolve it." + (txHash ? " Tx: https://sepolia.etherscan.io/tx/" + txHash : ""));
+    } catch (error) {
+      const raw = extractReadableError(error, "Raise dispute failed.");
+      setSafetyActionStatus(mapEscrowError(raw, "Raise dispute failed -- only the buyer or seller on this escrow can do this."));
+    } finally {
+      setSafetyActionLoading(false);
+    }
+  }
+
   const currentOwner = recordState?.record ? getCurrentOwner(recordState.record) : "";
   const currentTerroir = Number(recordState?.terroir || 0);
   const currentTransferCount = Number(recordState?.record?.transferCount || 0);
@@ -1314,6 +1392,58 @@ export default function TransferPage() {
           </form>
         </CardContent>
       </Card>
+
+      {escrowData && Number(escrowData.status) < 3 && (
+        <Card className="max-w-4xl border-[#26312b] bg-[#131917]">
+          <CardHeader className="pb-2">
+            <CardTitle>Escrow Safety Valve</CardTitle>
+            <CardDescription>
+              Optional actions -- none of these are needed for a normal sale. They exist for when a seller never
+              ships, a buyer never confirms, or either side needs to flag a problem.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={safetyActionLoading}
+                onClick={onCancelExpired}
+              >
+                {safetyActionLoading ? "Working..." : "Cancel Expired (buyer, past shipping deadline)"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={safetyActionLoading}
+                onClick={onCheckExpiry}
+              >
+                {safetyActionLoading ? "Working..." : "Check Expiry (anyone can call this)"}
+              </Button>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+              <Input
+                suppressHydrationWarning
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                placeholder="Reason for dispute"
+              />
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={safetyActionLoading}
+                onClick={onRaiseDispute}
+                className="w-fit"
+              >
+                {safetyActionLoading ? "Working..." : "Raise Dispute (buyer or seller)"}
+              </Button>
+            </div>
+
+            {safetyActionStatus && <p className="m-0 text-[#aebbb5]">{safetyActionStatus}</p>}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="max-w-4xl">
         <CardHeader className="pb-2">

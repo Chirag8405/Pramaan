@@ -24,6 +24,14 @@ const navGroups = [
             { href: "/verify", label: "Verify" },
             { href: "/transfer", label: "Transfer" }
         ]
+    },
+    {
+        label: "Activity",
+        items: [
+            { href: "/vouch", label: "Vouch" },
+            { href: "/monitor", label: "Monitor" },
+            { href: "/evidence", label: "Evidence" }
+        ]
     }
 ];
 

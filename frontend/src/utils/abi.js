@@ -207,6 +207,13 @@ export const ESCROW_MARKETPLACE_ABI = [
     type: "function"
   },
   {
+    inputs: [{ internalType: "uint256", name: "escrowId", type: "uint256" }],
+    name: "checkExpiry",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
     inputs: [
       { internalType: "uint256", name: "escrowId", type: "uint256" },
       { internalType: "string", name: "reason", type: "string" }
