@@ -12,7 +12,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@anon-aadhaar/react": "^2.4.3",
     "@base-org/account": "^2.5.2",
